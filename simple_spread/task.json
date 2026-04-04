@@ -1,0 +1,17 @@
+{
+  "env_name": "simple_spread_v3",
+  "episodes": 15000,
+  "eval_every_episodes": 250,
+  "frame_skip": 2,
+  "gif_seed_offset": 200000,
+  "max_cycles": 25,
+  "max_frames": 500,
+  "min_improve": 0.001,
+  "n_agents": 3,
+  "task_name": "simple_spread",
+  "task_type": "fixed_team",
+  "test_rollouts": 24,
+  "test_seed_offset": 20000,
+  "validation_rollouts": 12,
+  "validation_seed_offset": 10000
+}

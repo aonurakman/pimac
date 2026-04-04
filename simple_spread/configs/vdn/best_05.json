@@ -1,0 +1,25 @@
+{
+  "batch_size": 64,
+  "buffer_size": 200000,
+  "double_q": true,
+  "gamma": 0.99,
+  "lr": 0.00038189260862098694,
+  "max_grad_norm": 5.0,
+  "normalize_by_active": true,
+  "num_epochs": 1,
+  "num_hidden": 2,
+  "q_tot_clip": null,
+  "rnn_hidden_dim": 64,
+  "share_parameters": true,
+  "target_update_every": 400,
+  "tau": 0.5,
+  "temp_decay": 0.997,
+  "temp_init": 1.0,
+  "temp_min": 0.1,
+  "use_huber_loss": true,
+  "widths": [
+    128,
+    128,
+    128
+  ]
+}

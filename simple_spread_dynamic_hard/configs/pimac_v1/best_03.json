@@ -1,0 +1,33 @@
+{
+  "batch_size": 32,
+  "buffer_size": 200000,
+  "clip_eps": 0.3,
+  "critic_hidden_sizes": [
+    128,
+    128
+  ],
+  "distill_weight": 0.00010587150418306673,
+  "entropy_coef": 0.000766815110359083,
+  "gae_lambda": 0.95,
+  "gamma": 0.985,
+  "include_team_size_feature": true,
+  "lr": 0.0006457808356418751,
+  "max_grad_norm": 1.0,
+  "normalize_advantage": true,
+  "num_epochs": 5,
+  "num_hidden": 2,
+  "num_tokens": 4,
+  "rnn_hidden_dim": 96,
+  "set_embed_dim": 128,
+  "set_encoder_hidden_sizes": [
+    128,
+    96
+  ],
+  "teacher_ema_tau": 0.005,
+  "value_coef": 0.75,
+  "widths": [
+    96,
+    128,
+    96
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "batch_size": 128,
+  "buffer_size": 4096,
+  "clip_eps": 0.15,
+  "entropy_coef": 0.003763178006283851,
+  "gae_lambda": 0.95,
+  "gamma": 0.99,
+  "lr": 0.00035917611494431546,
+  "max_grad_norm": 5.0,
+  "normalize_advantage": true,
+  "num_epochs": 6,
+  "num_hidden": 2,
+  "rnn_hidden_dim": 128,
+  "value_coef": 0.25,
+  "widths": [
+    128,
+    128,
+    128
+  ]
+}

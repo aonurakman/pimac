@@ -1,0 +1,93 @@
+{
+  "checkpoint_selection_stage_index": 4,
+  "curriculum": [
+    {
+      "counts": [
+        1,
+        2
+      ],
+      "fraction": 0.2,
+      "name": "stage_1__1_2",
+      "weights": [
+        0.4,
+        0.6
+      ]
+    },
+    {
+      "counts": [
+        1,
+        2,
+        4
+      ],
+      "fraction": 0.25,
+      "name": "stage_2__1_2_4",
+      "weights": [
+        0.18,
+        0.27,
+        0.55
+      ]
+    },
+    {
+      "counts": [
+        1,
+        2,
+        4,
+        6
+      ],
+      "fraction": 0.3,
+      "name": "stage_3__1_2_4_6",
+      "weights": [
+        0.1,
+        0.15,
+        0.3,
+        0.45
+      ]
+    },
+    {
+      "counts": [
+        1,
+        2,
+        4,
+        6,
+        8
+      ],
+      "fraction": 0.25,
+      "name": "stage_4__1_2_4_6_8",
+      "weights": [
+        0.06,
+        0.09,
+        0.18,
+        0.27,
+        0.4
+      ]
+    }
+  ],
+  "env_name": "simple_spread_dynamic_v3",
+  "episodes": 15000,
+  "eval_counts": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10
+  ],
+  "eval_every_episodes": 300,
+  "frame_skip": 2,
+  "gif_seed_offset": 200000,
+  "max_agents": 10,
+  "max_cycles": 25,
+  "max_frames": 500,
+  "min_improve": 0.001,
+  "task_name": "simple_spread_dynamic",
+  "task_type": "dynamic_team",
+  "test_rollouts": 10,
+  "test_seed_offset": 20000,
+  "train_max_agents": 8,
+  "validation_rollouts": 5,
+  "validation_seed_offset": 10000
+}

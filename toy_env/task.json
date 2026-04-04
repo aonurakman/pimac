@@ -1,0 +1,18 @@
+{
+  "env_name": "coop_line_world",
+  "episodes": 6000,
+  "eval_every_episodes": 200,
+  "frame_skip": 1,
+  "gif_seed_offset": 200000,
+  "goal": 8,
+  "max_frames": 400,
+  "max_steps": 25,
+  "min_improve": 0.001,
+  "n_agents": 3,
+  "task_name": "toy_env",
+  "task_type": "fixed_team_toy",
+  "test_rollouts": 40,
+  "test_seed_offset": 20000,
+  "validation_rollouts": 20,
+  "validation_seed_offset": 10000
+}

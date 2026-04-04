@@ -1,0 +1,37 @@
+algorithm,config_file,source_suite,source_rank,objective_score,note
+random,random/best_01.json,manual,1,,Uniform random policy baseline with one minimal config.
+mappo,mappo/best_01.json,combined_hard,1,-38.179466247558594,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+mappo,mappo/best_02.json,combined_hard,2,-44.210824203491214,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+mappo,mappo/best_03.json,combined_hard,3,-55.54452819824219,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+iql,iql/best_01.json,combined_hard,1,-34.14507293701172,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+iql,iql/best_02.json,combined_hard,2,-34.442390823364256,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+iql,iql/best_03.json,combined_hard,3,-53.33929824829101,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+ippo,ippo/best_01.json,combined_hard,1,-57.2286262512207,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+ippo,ippo/best_02.json,combined_hard,2,-57.2286262512207,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+ippo,ippo/best_03.json,combined_hard,3,-59.16217193603515,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+qmix,qmix/best_01.json,combined_hard,1,-27.73268070220947,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+qmix,qmix/best_02.json,combined_hard,2,-34.941734313964844,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+qmix,qmix/best_03.json,combined_hard,3,-53.65933036804199,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+vdn,vdn/best_01.json,combined_hard,1,-26.694021224975586,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+vdn,vdn/best_02.json,combined_hard,2,-27.47751712799072,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+vdn,vdn/best_03.json,combined_hard,3,-29.25569267272949,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+pimac_v0,pimac_v0/best_01.json,hard_pimac_02,1,-36.68341979980469,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+pimac_v0,pimac_v0/best_02.json,combined_hard,2,-36.933509826660156,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+pimac_v0,pimac_v0/best_03.json,combined_hard,3,-37.15253410339355,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+pimac_v0,pimac_v0/best_04.json,combined_hard,4,-37.191935729980464,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+pimac_v0,pimac_v0/best_05.json,hard_pimac_02,5,-37.73273429870605,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+pimac_v1,pimac_v1/best_01.json,hard_pimac_02,1,-35.3753547668457,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+pimac_v1,pimac_v1/best_02.json,hard_pimac_02,2,-36.649647903442386,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+pimac_v1,pimac_v1/best_03.json,combined_hard,3,-37.3308723449707,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+pimac_v1,pimac_v1/best_04.json,hard_pimac_02,4,-37.71987648010254,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+pimac_v1,pimac_v1/best_05.json,hard_pimac_02,5,-38.703271484375,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+pimac_v2,pimac_v2/best_01.json,combined_hard,1,-36.13134841918945,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+pimac_v2,pimac_v2/best_02.json,hard_pimac_02,2,-36.48319854736328,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+pimac_v2,pimac_v2/best_03.json,combined_hard,3,-36.9129768371582,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+pimac_v2,pimac_v2/best_04.json,hard_pimac_02,4,-37.07858085632324,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+pimac_v2,pimac_v2/best_05.json,combined_hard,5,-37.614770507812494,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+pimac_v3,pimac_v3/best_01.json,hard_pimac_02,1,-37.82484588623046,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+pimac_v3,pimac_v3/best_02.json,combined_hard,2,-38.54192543029785,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+pimac_v3,pimac_v3/best_03.json,combined_hard,3,-38.99186477661132,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+pimac_v3,pimac_v3/best_04.json,hard_pimac_02,4,-39.369958496093744,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.
+pimac_v3,pimac_v3/best_05.json,hard_pimac_02,5,-39.43524932861328,Imported from combined_hard2 simple_spread_dynamic_hard leaderboard.

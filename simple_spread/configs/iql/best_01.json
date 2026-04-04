@@ -1,0 +1,22 @@
+{
+  "batch_size": 128,
+  "buffer_size": 100000,
+  "double_dqn": false,
+  "gamma": 0.97,
+  "lr": 0.00019658252665952965,
+  "max_grad_norm": 20.0,
+  "num_epochs": 1,
+  "num_hidden": 2,
+  "rnn_hidden_dim": 0,
+  "seq_len": 4,
+  "target_update_every": 400,
+  "tau": 0.5,
+  "temp_decay": 0.995,
+  "temp_init": 0.5,
+  "temp_min": 0.01,
+  "widths": [
+    128,
+    128,
+    128
+  ]
+}
