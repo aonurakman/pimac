@@ -5,7 +5,7 @@ A small research repo for the PIMAC family and its benchmark tasks.
 ## Structure
 
 - `algorithms/`: all benchmark learners in one place.
-- `simple_spread/`, `simple_spread_dynamic/`, `simple_spread_dynamic_hard/`, `toy_env/`: one task directory per environment.
+- `simple_spread/`, `simple_spread_dynamic/`, `simple_spread_dynamic_hard/`, `robotic_warehouse_dynamic/`, `toy_env/`: one task directory per environment.
   - `run.py`: the full task script.
   - `task.json`: default task settings.
   - `configs/`: runnable algorithm configs.
@@ -34,6 +34,7 @@ The public benchmark algorithms are:
 - `pimac_v1`
 - `pimac_v2`
 - `pimac_v3`
+- `pimac_v4`
 
 All learned algorithms use the same benchmark interface:
 
@@ -78,6 +79,9 @@ Each task directory keeps:
 - `configs/<algorithm>/best_01.json` ... `best_05.json`: top runnable configs
 - `configs/<algorithm>/default.json`: the plain default starting point for studies
 - `findings.md`: what earlier sweeps showed, what transferred, and what failed
+
+New tasks may start with only `default.json` files plus a minimal random baseline in `manifest.csv`
+until real archived sweeps exist. The manifest should stay honest about what is actually ranked.
 
 This repo keeps only the reusable configs and written findings, not the full bulk of historical sweep outputs.
 

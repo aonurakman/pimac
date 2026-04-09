@@ -1,0 +1,98 @@
+{
+  "checkpoint_selection_stage_index": 4,
+  "curriculum": [
+    {
+      "counts": [
+        2,
+        3
+      ],
+      "fraction": 0.2,
+      "name": "stage_1__2_3",
+      "weights": [
+        0.6,
+        0.4
+      ]
+    },
+    {
+      "counts": [
+        2,
+        3,
+        4
+      ],
+      "fraction": 0.25,
+      "name": "stage_2__2_3_4",
+      "weights": [
+        0.25,
+        0.3,
+        0.45
+      ]
+    },
+    {
+      "counts": [
+        2,
+        3,
+        4,
+        6
+      ],
+      "fraction": 0.25,
+      "name": "stage_3__2_3_4_6",
+      "weights": [
+        0.12,
+        0.18,
+        0.28,
+        0.42
+      ]
+    },
+    {
+      "counts": [
+        2,
+        3,
+        4,
+        6,
+        8
+      ],
+      "fraction": 0.3,
+      "name": "stage_4__2_3_4_6_8",
+      "weights": [
+        0.08,
+        0.12,
+        0.18,
+        0.25,
+        0.37
+      ]
+    }
+  ],
+  "env_id_template": "rware-small-{n_agents}ag-v2",
+  "env_name": "rware_small_default_global_v2",
+  "episodes": 3000,
+  "eval_counts": [
+    2,
+    3,
+    4,
+    5,
+    6,
+    8,
+    10
+  ],
+  "eval_every_episodes": 200,
+  "frame_skip": 4,
+  "gif_seed_offset": 200000,
+  "max_agents": 10,
+  "max_frames": 300,
+  "max_steps": 500,
+  "min_improve": 0.001,
+  "reward_type": "global",
+  "task_name": "robotic_warehouse_dynamic",
+  "task_type": "dynamic_team",
+  "test_rollouts": 5,
+  "test_seed_offset": 20000,
+  "train_max_agents": 8,
+  "validation_rollouts": 3,
+  "validation_seed_offset": 10000,
+  "video_counts": [
+    2,
+    4,
+    8,
+    10
+  ]
+}

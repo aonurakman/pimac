@@ -1,0 +1,2 @@
+algorithm,config_file,source_suite,source_rank,objective_score,note
+random,random/best_01.json,manual,1,,Uniform random policy baseline with one minimal config.
