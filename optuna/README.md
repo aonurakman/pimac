@@ -26,10 +26,13 @@ These JSON files are the study definitions for the sweeps we actually ran or may
   - the first hard-task PIMAC rescue sweep
 - `hard_pimac_competitive.json`
   - the later hard-task PIMAC sweep aimed at stronger returns
+- `rware_full.json`
+  - full sweep for `robotic_warehouse_dynamic`
 - `toy_full.json`
   - full sweep for `toy_env`
 - `core.json`
-  - small library file that runs the four full benchmark studies above
+  - small library file that runs the four original full benchmark studies above
+  - it intentionally does not include `rware_full.json`, because the warehouse task is materially heavier
 - `base.json`
   - non-runnable template showing the largest supported manifest shape
 
@@ -106,6 +109,14 @@ Example:
 
 When `study.py` reaches that block, it loads the best completed parent configs from the same suite
 and copies the listed keys after local sampling.
+
+The current intended PIMAC ladder is:
+
+- `pimac_v0` from `mappo`
+- `pimac_v1` from `pimac_v0`
+- `pimac_v2` from `pimac_v1`
+- `pimac_v3` from `pimac_v2`
+- `pimac_v4` from `pimac_v3`
 
 Inside each inherit block:
 

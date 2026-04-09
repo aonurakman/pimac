@@ -21,7 +21,14 @@ import torch
 
 @dataclass(frozen=True)
 class ParallelEnvSpec:
-    """Environment facts that every learner needs at construction time."""
+    """Environment facts that every learner needs at construction time.
+
+    `max_agents` remains part of the shared benchmark interface because some
+    learners and task/tooling paths still need a configured team-size bound.
+    Current PIMAC variants do not use it as a fixed architectural width in
+    their actor/critic/update path; they batch with dynamic per-minibatch
+    padding instead.
+    """
 
     obs_size: int
     action_space_size: int

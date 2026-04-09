@@ -11,19 +11,34 @@
           "values": [
             {
               "num_hidden": 1,
-              "widths": [64, 64]
+              "widths": [
+                64,
+                64
+              ]
             },
             {
               "num_hidden": 2,
-              "widths": [64, 128, 64]
+              "widths": [
+                64,
+                128,
+                64
+              ]
             },
             {
               "num_hidden": 2,
-              "widths": [128, 128, 128]
+              "widths": [
+                128,
+                128,
+                128
+              ]
             },
             {
               "num_hidden": 2,
-              "widths": [128, 256, 128]
+              "widths": [
+                128,
+                256,
+                128
+              ]
             }
           ],
           "merge": true
@@ -36,27 +51,51 @@
         },
         "batch_size": {
           "type": "categorical",
-          "values": [32, 64, 128]
+          "values": [
+            32,
+            64,
+            128
+          ]
         },
         "num_epochs": {
           "type": "categorical",
-          "values": [2, 4, 6, 8]
+          "values": [
+            2,
+            4,
+            6,
+            8
+          ]
         },
         "rnn_hidden_dim": {
           "type": "categorical",
-          "values": [64, 128]
+          "values": [
+            64,
+            128
+          ]
         },
         "clip_eps": {
           "type": "categorical",
-          "values": [0.1, 0.15, 0.2, 0.25]
+          "values": [
+            0.1,
+            0.15,
+            0.2,
+            0.25
+          ]
         },
         "gamma": {
           "type": "categorical",
-          "values": [0.97, 0.99]
+          "values": [
+            0.97,
+            0.99
+          ]
         },
         "gae_lambda": {
           "type": "categorical",
-          "values": [0.93, 0.95, 0.97]
+          "values": [
+            0.93,
+            0.95,
+            0.97
+          ]
         },
         "entropy_coef": {
           "type": "float",
@@ -66,20 +105,47 @@
         },
         "value_coef": {
           "type": "categorical",
-          "values": [0.25, 0.5, 1.0]
+          "values": [
+            0.25,
+            0.5,
+            1.0
+          ]
         },
         "max_grad_norm": {
           "type": "categorical",
-          "values": [0.5, 1.0, 2.0, 5.0, 10.0]
+          "values": [
+            0.5,
+            1.0,
+            2.0,
+            5.0,
+            10.0
+          ]
         },
         "critic_hidden_sizes": {
           "type": "categorical",
           "values": [
-            [64, 64],
-            [128, 128],
-            [64, 64, 64],
-            [128, 128, 128],
-            [256, 256]
+            [
+              64,
+              64
+            ],
+            [
+              128,
+              128
+            ],
+            [
+              64,
+              64,
+              64
+            ],
+            [
+              128,
+              128,
+              128
+            ],
+            [
+              256,
+              256
+            ]
           ]
         }
       }
@@ -91,24 +157,56 @@
         "critic_hidden_sizes": {
           "type": "categorical",
           "values": [
-            [96, 96],
-            [128, 96],
-            [128, 128],
-            [96, 96, 96]
+            [
+              96,
+              96
+            ],
+            [
+              128,
+              96
+            ],
+            [
+              128,
+              128
+            ],
+            [
+              96,
+              96,
+              96
+            ]
           ]
         },
         "set_embed_dim": {
           "type": "categorical",
-          "values": [96, 128, 160]
+          "values": [
+            96,
+            128,
+            160
+          ]
         },
         "set_encoder_hidden_sizes": {
           "type": "categorical",
           "values": [
-            [96, 96],
-            [128, 64],
-            [128, 96],
-            [128, 128],
-            [160, 96]
+            [
+              96,
+              96
+            ],
+            [
+              128,
+              64
+            ],
+            [
+              128,
+              96
+            ],
+            [
+              128,
+              128
+            ],
+            [
+              160,
+              96
+            ]
           ]
         },
         "include_team_size_feature": {
@@ -119,7 +217,20 @@
       "inherit": [
         {
           "from": "mappo",
-          "keys": ["lr", "batch_size", "num_epochs", "num_hidden", "widths", "rnn_hidden_dim", "clip_eps", "gamma", "gae_lambda", "entropy_coef", "value_coef", "max_grad_norm"]
+          "keys": [
+            "lr",
+            "batch_size",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm"
+          ]
         }
       ]
     },
@@ -129,7 +240,11 @@
       "search": {
         "num_tokens": {
           "type": "categorical",
-          "values": [4, 6, 8]
+          "values": [
+            4,
+            6,
+            8
+          ]
         },
         "distill_weight": {
           "type": "float",
@@ -139,17 +254,40 @@
         },
         "teacher_ema_tau": {
           "type": "categorical",
-          "values": [0.0025, 0.005, 0.01, 0.02]
+          "values": [
+            0.0025,
+            0.005,
+            0.01,
+            0.02
+          ]
         }
       },
       "inherit": [
         {
           "from": "mappo",
-          "keys": ["lr", "batch_size", "num_epochs", "num_hidden", "widths", "rnn_hidden_dim", "clip_eps", "gamma", "gae_lambda", "entropy_coef", "value_coef", "max_grad_norm"]
+          "keys": [
+            "lr",
+            "batch_size",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm"
+          ]
         },
         {
           "from": "pimac_v0",
-          "keys": ["critic_hidden_sizes", "set_embed_dim", "set_encoder_hidden_sizes", "include_team_size_feature"]
+          "keys": [
+            "critic_hidden_sizes",
+            "set_embed_dim",
+            "set_encoder_hidden_sizes",
+            "include_team_size_feature"
+          ]
         }
       ]
     },
@@ -165,28 +303,70 @@
         },
         "teacher_ema_tau": {
           "type": "categorical",
-          "values": [0.0025, 0.005, 0.01, 0.02]
+          "values": [
+            0.0025,
+            0.005,
+            0.01,
+            0.02
+          ]
         },
         "ctx_logvar_bounds": {
           "type": "categorical",
           "values": [
-            [-2.0, 2.0],
-            [-1.5, 1.5],
-            [-1.0, 1.0],
-            [-0.5, 1.0],
-            [-0.5, 0.5]
+            [
+              -2.0,
+              2.0
+            ],
+            [
+              -1.5,
+              1.5
+            ],
+            [
+              -1.0,
+              1.0
+            ],
+            [
+              -0.5,
+              1.0
+            ],
+            [
+              -0.5,
+              0.5
+            ]
           ],
-          "targets": ["ctx_logvar_min", "ctx_logvar_max"]
+          "targets": [
+            "ctx_logvar_min",
+            "ctx_logvar_max"
+          ]
         }
       },
       "inherit": [
         {
           "from": "mappo",
-          "keys": ["lr", "batch_size", "num_epochs", "num_hidden", "widths", "rnn_hidden_dim", "clip_eps", "gamma", "gae_lambda", "entropy_coef", "value_coef", "max_grad_norm"]
+          "keys": [
+            "lr",
+            "batch_size",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm"
+          ]
         },
         {
           "from": "pimac_v1",
-          "keys": ["critic_hidden_sizes", "set_embed_dim", "set_encoder_hidden_sizes", "include_team_size_feature", "num_tokens"]
+          "keys": [
+            "critic_hidden_sizes",
+            "set_embed_dim",
+            "set_encoder_hidden_sizes",
+            "include_team_size_feature",
+            "num_tokens"
+          ]
         }
       ]
     },
@@ -202,23 +382,44 @@
         },
         "teacher_ema_tau": {
           "type": "categorical",
-          "values": [0.005, 0.01, 0.02, 0.05]
+          "values": [
+            0.005,
+            0.01,
+            0.02,
+            0.05
+          ]
         },
         "hypernet_rank": {
           "type": "categorical",
-          "values": [1, 2]
+          "values": [
+            1,
+            2
+          ]
         },
         "hypernet_hidden_sizes": {
           "type": "categorical",
           "values": [
-            [32, 32],
-            [64, 32],
-            [64, 64]
+            [
+              32,
+              32
+            ],
+            [
+              64,
+              32
+            ],
+            [
+              64,
+              64
+            ]
           ]
         },
         "hypernet_delta_init_scale": {
           "type": "categorical",
-          "values": [0.005, 0.01, 0.02]
+          "values": [
+            0.005,
+            0.01,
+            0.02
+          ]
         },
         "hypernet_l2_coef": {
           "type": "float",
@@ -230,11 +431,117 @@
       "inherit": [
         {
           "from": "mappo",
-          "keys": ["lr", "batch_size", "num_epochs", "num_hidden", "widths", "rnn_hidden_dim", "clip_eps", "gamma", "gae_lambda", "entropy_coef", "value_coef", "max_grad_norm"]
+          "keys": [
+            "lr",
+            "batch_size",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm"
+          ]
         },
         {
           "from": "pimac_v2",
-          "keys": ["critic_hidden_sizes", "set_embed_dim", "set_encoder_hidden_sizes", "include_team_size_feature", "num_tokens", "ctx_logvar_min", "ctx_logvar_max"]
+          "keys": [
+            "critic_hidden_sizes",
+            "set_embed_dim",
+            "set_encoder_hidden_sizes",
+            "include_team_size_feature",
+            "num_tokens",
+            "ctx_logvar_min",
+            "ctx_logvar_max"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "pimac_v4",
+      "trials": 5,
+      "search": {
+        "distill_weight": {
+          "type": "float",
+          "low": 8e-05,
+          "high": 0.0015,
+          "log": true
+        },
+        "teacher_ema_tau": {
+          "type": "categorical",
+          "values": [
+            0.005,
+            0.01,
+            0.02,
+            0.05
+          ]
+        },
+        "hypernet_rank": {
+          "type": "categorical",
+          "values": [
+            1,
+            2
+          ]
+        },
+        "hypernet_hidden_sizes": {
+          "type": "categorical",
+          "values": [
+            [
+              32,
+              32
+            ],
+            [
+              64,
+              32
+            ],
+            [
+              64,
+              64
+            ]
+          ]
+        },
+        "hypernet_delta_init_scale": {
+          "type": "categorical",
+          "values": [
+            0.005,
+            0.01,
+            0.02
+          ]
+        },
+        "hypernet_l2_coef": {
+          "type": "float",
+          "low": 2e-05,
+          "high": 0.0005,
+          "log": true
+        }
+      },
+      "inherit": [
+        {
+          "from": "pimac_v3",
+          "keys": [
+            "lr",
+            "batch_size",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm",
+            "critic_hidden_sizes",
+            "set_embed_dim",
+            "set_encoder_hidden_sizes",
+            "include_team_size_feature",
+            "num_tokens",
+            "ctx_logvar_min",
+            "ctx_logvar_max"
+          ]
         }
       ]
     }

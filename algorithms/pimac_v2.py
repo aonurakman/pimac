@@ -409,7 +409,6 @@ class PIMACV2(ParallelLearner):
         super().__init__(env_spec=env_spec, config=self.normalize_config(config), device=device)
         config = self.config
 
-        self.num_agents = int(self.max_agents)
         self.batch_size = int(config["batch_size"])
         self.num_epochs = int(config["num_epochs"])
         self.gamma = float(config["gamma"])
@@ -851,6 +850,7 @@ class PIMACV2(ParallelLearner):
 
         Padding is dynamic and local to the sampled minibatch:
         we pad to the largest team size present in this batch only.
+        The PIMAC update path does not expand tensors to `env_spec.max_agents`.
         """
         max_num_timesteps = max(int(episode["T"]) for episode in batch)
         max_num_agents = max(int(episode["N"]) for episode in batch)

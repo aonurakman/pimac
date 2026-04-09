@@ -1,13 +1,13 @@
 """
 PIMACV3 implementation for parallel multi-agent environments.
 
-PIMACV3 extends `pimac_v2` with context-conditioned hypernetwork policy heads:
+PIMACV3 extends `pimac_v2` with a context-conditioned policy head:
 - A token-based set teacher produces per-agent cooperation context through
   masked cross-attention.
 - The centralized critic consumes teacher tokens for team-value estimation.
 - The decentralized actor predicts student context (`mu`, `logvar`) from local
-  recurrent features, modulates policy features with FiLM, and applies a gated
-  low-rank residual hypernetwork over the policy head parameters.
+  recurrent features and uses it to generate a gated low-rank residual over the
+  policy head parameters.
 - Student context is trained by heteroscedastic distillation against teacher
   context, while PPO remains on-policy.
 
@@ -112,11 +112,10 @@ class PIMACV3ActorRNN(nn.Module):
     - action logits,
     - context mean (`ctx_mu`) and log-variance (`ctx_logvar`) for distillation.
 
-    Policy conditioning follows uncertainty-gated FiLM + hypernetwork residuals:
-    - FiLM scale/shift are predicted from student context mean.
-    - A scalar gate from student uncertainty scales FiLM strength.
+    Policy conditioning follows uncertainty-gated head adaptation:
+    - A scalar gate from student uncertainty scales the adaptation strength.
     - A low-rank hypernetwork predicts residual policy-head deltas from context.
-    - The same uncertainty gate scales the hypernetwork parameter deltas.
+    - The recurrent policy features are passed directly into the adapted head.
     """
 
     def __init__(
@@ -152,7 +151,6 @@ class PIMACV3ActorRNN(nn.Module):
 
         self.ctx_mu_head = nn.Linear(self.hidden_dim, int(ctx_dim))
         self.ctx_logvar_head = nn.Linear(self.hidden_dim, int(ctx_dim))
-        self.film_head = nn.Linear(int(ctx_dim), 2 * self.hidden_dim)
         self.gate_weight = nn.Parameter(torch.tensor(1.0, dtype=torch.float32))
         self.gate_bias = nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
         # Learned base policy head; hypernetwork generates a context-conditioned residual.
@@ -217,19 +215,9 @@ class PIMACV3ActorRNN(nn.Module):
             max=self.ctx_logvar_max,
         )
 
-        # FiLM parameters are predicted from student context mean.
-        film_parameters = self.film_head(context_mean)
-        film_scale, film_shift = torch.chunk(film_parameters, 2, dim=-1)
-
         # Higher uncertainty (larger log-variance) reduces modulation strength.
         mean_log_variance = context_log_variance.mean(dim=-1, keepdim=True)
         modulation_gate = torch.sigmoid(self.gate_weight * (-mean_log_variance) + self.gate_bias)
-
-        # Uncertainty-gated FiLM modulation over recurrent policy features.
-        modulated_recurrent_features = (
-            recurrent_features * (1.0 + modulation_gate * film_scale)
-            + modulation_gate * film_shift
-        )
 
         # Hypernetwork predicts low-rank policy-head residual factors from context.
         hypernet_deltas = self.hypernet_delta_head(context_mean) * self.hypernet_delta_init_scale
@@ -247,7 +235,7 @@ class PIMACV3ActorRNN(nn.Module):
         effective_weight = base_weight + gate_for_params * delta_weight
         effective_bias = base_bias + modulation_gate * delta_bias
 
-        action_logits = torch.einsum("bth,btha->bta", modulated_recurrent_features, effective_weight) + effective_bias
+        action_logits = torch.einsum("bth,btha->bta", recurrent_features, effective_weight) + effective_bias
 
         delta_w_l2 = delta_weight.pow(2).sum(dim=(-1, -2))
         delta_b_l2 = delta_bias.pow(2).sum(dim=-1)
@@ -455,6 +443,9 @@ class PIMACV3(ParallelLearner):
     - team-level GAE and PPO losses,
     - teacher-student distillation with EMA teacher targets,
     - diagnostics tracking for scripts/plots.
+
+    The actor uses head-only context adaptation. FiLM feature modulation first
+    appears in `pimac_v4`.
     """
 
     @staticmethod
@@ -465,7 +456,6 @@ class PIMACV3(ParallelLearner):
         super().__init__(env_spec=env_spec, config=self.normalize_config(config), device=device)
         config = self.config
 
-        self.num_agents = int(self.max_agents)
         self.batch_size = int(config["batch_size"])
         self.num_epochs = int(config["num_epochs"])
         self.gamma = float(config["gamma"])
@@ -922,6 +912,7 @@ class PIMACV3(ParallelLearner):
 
         Padding is dynamic and local to the sampled minibatch:
         we pad to the largest team size present in this batch only.
+        The PIMAC update path does not expand tensors to `env_spec.max_agents`.
         """
         max_num_timesteps = max(int(episode["T"]) for episode in batch)
         max_num_agents = max(int(episode["N"]) for episode in batch)
@@ -1367,4 +1358,4 @@ class PIMACV3(ParallelLearner):
             self.target_teacher.load_state_dict(target_teacher_state)
         optimizer_state = checkpoint_state.get("optimizer_state_dict")
         if optimizer_state is not None:
-            self.optimizer.load_state_dict(optimizer_state)
+            self.optimizer.load_state_dict(optimizer_state)#

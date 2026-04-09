@@ -4,6 +4,8 @@ Archived source suite: `combined2` / `coop_line_world`
 
 These notes summarize patterns from the archived top configs in `configs/`.
 For this task, the main conclusion is that there is almost nothing useful to learn from hyperparameter rankings.
+The archived FiLM-plus-head sweeps that used to be labeled `pimac_v3` are now tracked here as `pimac_v4`.
+The current head-only `pimac_v3` has no archived findings for this task yet.
 
 ## Main takeaways
 This task is a smoke test, not a discriminative benchmark.
@@ -19,7 +21,7 @@ Interpretation: keep it only for fast debugging, API checks, and quick smoke run
 - `pimac_v0`: `1.7239583730697632`
 - `pimac_v1`: `1.7239583730697632`
 - `pimac_v2`: `1.7239583730697632`
-- `pimac_v3`: `1.7239583730697632`
+- `pimac_v4`: `1.7239583730697632`
 
 ## Parameter interpretation
 - This task is too easy to support meaningful parameter conclusions. The archived top-five configs for each algorithm all reach the same score.

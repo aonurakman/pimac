@@ -26,7 +26,7 @@ from optuna_utils import LEARNED_ALGORITHM_ORDER, TASK_SPECS, discover_task_ids,
 from utils import OPTUNA_RESULTS_ROOT, load_json, save_gif, write_csv, write_json
 
 
-PIMAC_TRACE_ALGORITHMS = {"pimac_v1", "pimac_v2", "pimac_v3"}
+PIMAC_TRACE_ALGORITHMS = {"pimac_v1", "pimac_v2", "pimac_v3", "pimac_v4"}
 DEFAULT_VIDEO_DYNAMIC_COUNTS = (1, 4, 8, 10)
 
 
@@ -96,6 +96,16 @@ def _transform_obs(task_script, env_spec, obs: np.ndarray) -> np.ndarray:
     return task_script.prepare_observation(obs, env_spec)
 
 
+def _task_is_dynamic(task_config: dict[str, Any]) -> bool:
+    """Treat every dynamic-team variant as a dynamic task in Optuna analysis."""
+    return str(task_config.get("task_type", "")).startswith("dynamic_team")
+
+
+def _video_counts_for_task(task_config: dict[str, Any]) -> list[int]:
+    """Resolve the default video counts for one task config."""
+    return [int(value) for value in task_config.get("video_counts", DEFAULT_VIDEO_DYNAMIC_COUNTS)]
+
+
 def load_best_policy(best_run: BestRun, *, task_id: str, seed: int):
     task_spec = get_task_spec(task_id)
     task_config = load_json(task_spec.task_config)
@@ -113,7 +123,7 @@ def load_best_policy(best_run: BestRun, *, task_id: str, seed: int):
 
 
 def _run_one_rollout(*, task_id: str, task_config: dict, task_script, env_spec, learner, seed: int, n_agents: int | None = None, render_mode: str | None = None, frame_budget: int | None = None):
-    if task_id in {"simple_spread_dynamic", "simple_spread_dynamic_hard"}:
+    if _task_is_dynamic(task_config):
         env = task_script.make_env(task_config, seed=seed, n_agents=int(n_agents), render_mode=render_mode)
     else:
         env = task_script.make_env(task_config, seed=seed, render_mode=render_mode)
@@ -172,7 +182,7 @@ def compare_best_checkpoints(
     task_spec = get_task_spec(task_id)
     task_config = load_json(task_spec.task_config)
     task_script = _task_script_module(task_id)
-    dynamic_task = task_id in {"simple_spread_dynamic", "simple_spread_dynamic_hard"}
+    dynamic_task = _task_is_dynamic(task_config)
 
     if dynamic_task:
         rollout_count = int(dynamic_per_count_rollouts or task_config["test_rollouts"])
@@ -359,7 +369,7 @@ def analyze_pimac_coordination(
     output_dir: str | None = None,
     overwrite: bool = False,
 ) -> Path:
-    if task_id not in {"simple_spread", "simple_spread_dynamic", "simple_spread_dynamic_hard", "toy_env"}:
+    if task_id not in TASK_SPECS:
         raise KeyError(f"Unsupported task for coordination analysis: {task_id}")
     task_spec = get_task_spec(task_id)
     task_config = load_json(task_spec.task_config)
@@ -374,7 +384,7 @@ def analyze_pimac_coordination(
         shutil.rmtree(resolved_output_dir)
     resolved_output_dir.mkdir(parents=True, exist_ok=True)
 
-    dynamic_task = task_id in {"simple_spread_dynamic", "simple_spread_dynamic_hard"}
+    dynamic_task = _task_is_dynamic(task_config)
     analysis_counts = list(counts) if counts is not None else (
         [value for value in task_config["eval_counts"] if int(value) > 1] if dynamic_task else [int(task_config["n_agents"])]
     )
@@ -573,9 +583,9 @@ def render_best_rollout_videos(
     task_spec = get_task_spec(task_id)
     task_config = load_json(task_spec.task_config)
     task_script = _task_script_module(task_id)
-    dynamic_task = task_id in {"simple_spread_dynamic", "simple_spread_dynamic_hard"}
+    dynamic_task = _task_is_dynamic(task_config)
     target_counts = list(counts) if counts is not None else (
-        list(DEFAULT_VIDEO_DYNAMIC_COUNTS) if dynamic_task else [int(task_config["n_agents"])]
+        _video_counts_for_task(task_config) if dynamic_task else [int(task_config["n_agents"])]
     )
 
     manifest_rows: list[dict[str, Any]] = []

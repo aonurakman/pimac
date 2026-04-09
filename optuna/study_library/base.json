@@ -1,6 +1,12 @@
 {
   "template": true,
-  "notes": ["This file is a guide. study.py rejects it on purpose.", "Copy it to a new manifest, remove template=true, then trim it down to the study you want.", "Every search entry is a small typed object. The sampler reads the type field and handles it accordingly.", "PIMAC chaining is declared with inherit blocks. Later variants pull selected keys from the best completed parent config in the same suite.", "The random algorithm is shown here only as a config guide. study.py does not run random."],
+  "notes": [
+    "This file is a guide. study.py rejects it on purpose.",
+    "Copy it to a new manifest, remove template=true, then trim it down to the study you want.",
+    "Every search entry is a small typed object. The sampler reads the type field and handles it accordingly.",
+    "PIMAC chaining is declared with inherit blocks. Later variants pull selected keys from the best completed parent config in the same suite.",
+    "The random algorithm is shown here only as a config guide. study.py does not run random."
+  ],
   "task": "simple_spread_dynamic_hard",
   "seed": 42,
   "task_overrides": {
@@ -20,19 +26,33 @@
           "values": [
             {
               "num_hidden": 1,
-              "widths": [64, 64]
+              "widths": [
+                64,
+                64
+              ]
             },
             {
               "num_hidden": 1,
-              "widths": [96, 96]
+              "widths": [
+                96,
+                96
+              ]
             },
             {
               "num_hidden": 2,
-              "widths": [64, 96, 64]
+              "widths": [
+                64,
+                96,
+                64
+              ]
             },
             {
               "num_hidden": 2,
-              "widths": [96, 128, 96]
+              "widths": [
+                96,
+                128,
+                96
+              ]
             }
           ],
           "merge": true
@@ -45,27 +65,52 @@
         },
         "batch_size": {
           "type": "categorical",
-          "values": [24, 32, 48]
+          "values": [
+            24,
+            32,
+            48
+          ]
         },
         "num_epochs": {
           "type": "categorical",
-          "values": [2, 3, 4, 5]
+          "values": [
+            2,
+            3,
+            4,
+            5
+          ]
         },
         "rnn_hidden_dim": {
           "type": "categorical",
-          "values": [64, 80, 96, 112]
+          "values": [
+            64,
+            80,
+            96,
+            112
+          ]
         },
         "clip_eps": {
           "type": "categorical",
-          "values": [0.2, 0.25, 0.3]
+          "values": [
+            0.2,
+            0.25,
+            0.3
+          ]
         },
         "gamma": {
           "type": "categorical",
-          "values": [0.97, 0.98, 0.985]
+          "values": [
+            0.97,
+            0.98,
+            0.985
+          ]
         },
         "gae_lambda": {
           "type": "categorical",
-          "values": [0.95, 0.97]
+          "values": [
+            0.95,
+            0.97
+          ]
         },
         "entropy_coef": {
           "type": "float",
@@ -75,20 +120,45 @@
         },
         "value_coef": {
           "type": "categorical",
-          "values": [0.5, 0.75, 1.0]
+          "values": [
+            0.5,
+            0.75,
+            1.0
+          ]
         },
         "max_grad_norm": {
           "type": "categorical",
-          "values": [1.0, 2.0, 5.0]
+          "values": [
+            1.0,
+            2.0,
+            5.0
+          ]
         },
         "critic_hidden_sizes": {
           "type": "categorical",
           "values": [
-            [96, 96],
-            [128, 96],
-            [96, 96, 96],
-            [128, 128],
-            [128, 128, 128]
+            [
+              96,
+              96
+            ],
+            [
+              128,
+              96
+            ],
+            [
+              96,
+              96,
+              96
+            ],
+            [
+              128,
+              128
+            ],
+            [
+              128,
+              128,
+              128
+            ]
           ]
         }
       },
@@ -104,15 +174,26 @@
           "values": [
             {
               "num_hidden": 1,
-              "widths": [64, 64]
+              "widths": [
+                64,
+                64
+              ]
             },
             {
               "num_hidden": 2,
-              "widths": [64, 128, 64]
+              "widths": [
+                64,
+                128,
+                64
+              ]
             },
             {
               "num_hidden": 2,
-              "widths": [128, 128, 128]
+              "widths": [
+                128,
+                128,
+                128
+              ]
             }
           ],
           "merge": true
@@ -125,31 +206,58 @@
         },
         "batch_size": {
           "type": "categorical",
-          "values": [32, 64, 128]
+          "values": [
+            32,
+            64,
+            128
+          ]
         },
         "update_every_episodes": {
           "type": "categorical",
-          "values": [4, 8, 16]
+          "values": [
+            4,
+            8,
+            16
+          ]
         },
         "num_epochs": {
           "type": "categorical",
-          "values": [2, 4, 6]
+          "values": [
+            2,
+            4,
+            6
+          ]
         },
         "rnn_hidden_dim": {
           "type": "categorical",
-          "values": [64, 128]
+          "values": [
+            64,
+            128
+          ]
         },
         "clip_eps": {
           "type": "categorical",
-          "values": [0.1, 0.15, 0.2, 0.25]
+          "values": [
+            0.1,
+            0.15,
+            0.2,
+            0.25
+          ]
         },
         "gamma": {
           "type": "categorical",
-          "values": [0.97, 0.99]
+          "values": [
+            0.97,
+            0.99
+          ]
         },
         "gae_lambda": {
           "type": "categorical",
-          "values": [0.93, 0.95, 0.97]
+          "values": [
+            0.93,
+            0.95,
+            0.97
+          ]
         },
         "entropy_coef": {
           "type": "float",
@@ -159,11 +267,20 @@
         },
         "value_coef": {
           "type": "categorical",
-          "values": [0.25, 0.5, 1.0]
+          "values": [
+            0.25,
+            0.5,
+            1.0
+          ]
         },
         "max_grad_norm": {
           "type": "categorical",
-          "values": [0.5, 1.0, 2.0, 5.0]
+          "values": [
+            0.5,
+            1.0,
+            2.0,
+            5.0
+          ]
         }
       },
       "note": "Example independent PPO search."
@@ -178,15 +295,26 @@
           "values": [
             {
               "num_hidden": 1,
-              "widths": [64, 64]
+              "widths": [
+                64,
+                64
+              ]
             },
             {
               "num_hidden": 2,
-              "widths": [64, 128, 64]
+              "widths": [
+                64,
+                128,
+                64
+              ]
             },
             {
               "num_hidden": 2,
-              "widths": [128, 128, 128]
+              "widths": [
+                128,
+                128,
+                128
+              ]
             }
           ],
           "merge": true
@@ -199,55 +327,101 @@
         },
         "batch_size": {
           "type": "categorical",
-          "values": [64, 128]
+          "values": [
+            64,
+            128
+          ]
         },
         "num_epochs": {
           "type": "categorical",
-          "values": [1, 2]
+          "values": [
+            1,
+            2
+          ]
         },
         "rnn_hidden_dim": {
           "type": "categorical",
-          "values": [0, 64, 128]
+          "values": [
+            0,
+            64,
+            128
+          ]
         },
         "seq_len": {
           "type": "categorical",
-          "values": [4, 8]
+          "values": [
+            4,
+            8
+          ]
         },
         "gamma": {
           "type": "categorical",
-          "values": [0.97, 0.99]
+          "values": [
+            0.97,
+            0.99
+          ]
         },
         "target_update_every": {
           "type": "categorical",
-          "values": [200, 400]
+          "values": [
+            200,
+            400
+          ]
         },
         "double_dqn": {
           "type": "categorical",
-          "values": [true, false]
+          "values": [
+            true,
+            false
+          ]
         },
         "tau": {
           "type": "categorical",
-          "values": [0.05, 0.1, 0.5, 1.0]
+          "values": [
+            0.05,
+            0.1,
+            0.5,
+            1.0
+          ]
         },
         "temp_init": {
           "type": "categorical",
-          "values": [1.0, 1.5, 2.0]
+          "values": [
+            1.0,
+            1.5,
+            2.0
+          ]
         },
         "temp_decay": {
           "type": "categorical",
-          "values": [0.9995, 0.9997, 0.99985, 0.9999]
+          "values": [
+            0.9995,
+            0.9997,
+            0.99985,
+            0.9999
+          ]
         },
         "temp_min": {
           "type": "categorical",
-          "values": [0.1, 0.2]
+          "values": [
+            0.1,
+            0.2
+          ]
         },
         "learn_every_steps": {
           "type": "categorical",
-          "values": [4, 8]
+          "values": [
+            4,
+            8
+          ]
         },
         "max_grad_norm": {
           "type": "categorical",
-          "values": [5.0, 10.0, 20.0]
+          "values": [
+            5.0,
+            10.0,
+            20.0
+          ]
         }
       },
       "note": "Example value-learning search with dynamic-task temperatures."
@@ -262,11 +436,19 @@
           "values": [
             {
               "num_hidden": 2,
-              "widths": [64, 128, 64]
+              "widths": [
+                64,
+                128,
+                64
+              ]
             },
             {
               "num_hidden": 2,
-              "widths": [128, 128, 128]
+              "widths": [
+                128,
+                128,
+                128
+              ]
             }
           ],
           "merge": true
@@ -279,11 +461,17 @@
         },
         "batch_size": {
           "type": "categorical",
-          "values": [32, 64]
+          "values": [
+            32,
+            64
+          ]
         },
         "num_epochs": {
           "type": "categorical",
-          "values": [1, 2]
+          "values": [
+            1,
+            2
+          ]
         },
         "rnn_hidden_dim": {
           "type": "constant",
@@ -291,43 +479,77 @@
         },
         "gamma": {
           "type": "categorical",
-          "values": [0.97, 0.99]
+          "values": [
+            0.97,
+            0.99
+          ]
         },
         "target_update_every": {
           "type": "categorical",
-          "values": [200, 400]
+          "values": [
+            200,
+            400
+          ]
         },
         "learn_every_steps": {
           "type": "categorical",
-          "values": [8, 16]
+          "values": [
+            8,
+            16
+          ]
         },
         "double_q": {
           "type": "categorical",
-          "values": [true, false]
+          "values": [
+            true,
+            false
+          ]
         },
         "tau": {
           "type": "categorical",
-          "values": [0.1, 0.5, 1.0]
+          "values": [
+            0.1,
+            0.5,
+            1.0
+          ]
         },
         "temp_init": {
           "type": "categorical",
-          "values": [1.0, 1.5, 2.0]
+          "values": [
+            1.0,
+            1.5,
+            2.0
+          ]
         },
         "temp_decay": {
           "type": "categorical",
-          "values": [0.9995, 0.9997, 0.99985, 0.9999]
+          "values": [
+            0.9995,
+            0.9997,
+            0.99985,
+            0.9999
+          ]
         },
         "temp_min": {
           "type": "categorical",
-          "values": [0.1, 0.2]
+          "values": [
+            0.1,
+            0.2
+          ]
         },
         "use_huber_loss": {
           "type": "categorical",
-          "values": [true, false]
+          "values": [
+            true,
+            false
+          ]
         },
         "max_grad_norm": {
           "type": "categorical",
-          "values": [5.0, 10.0]
+          "values": [
+            5.0,
+            10.0
+          ]
         },
         "share_parameters": {
           "type": "constant",
@@ -346,11 +568,19 @@
           "values": [
             {
               "num_hidden": 2,
-              "widths": [64, 128, 64]
+              "widths": [
+                64,
+                128,
+                64
+              ]
             },
             {
               "num_hidden": 2,
-              "widths": [128, 128, 128]
+              "widths": [
+                128,
+                128,
+                128
+              ]
             }
           ],
           "merge": true
@@ -363,11 +593,17 @@
         },
         "batch_size": {
           "type": "categorical",
-          "values": [32, 64]
+          "values": [
+            32,
+            64
+          ]
         },
         "num_epochs": {
           "type": "categorical",
-          "values": [1, 2]
+          "values": [
+            1,
+            2
+          ]
         },
         "rnn_hidden_dim": {
           "type": "constant",
@@ -375,60 +611,110 @@
         },
         "gamma": {
           "type": "categorical",
-          "values": [0.97, 0.99]
+          "values": [
+            0.97,
+            0.99
+          ]
         },
         "target_update_every": {
           "type": "categorical",
-          "values": [200, 400]
+          "values": [
+            200,
+            400
+          ]
         },
         "learn_every_steps": {
           "type": "categorical",
-          "values": [8, 16]
+          "values": [
+            8,
+            16
+          ]
         },
         "double_q": {
           "type": "categorical",
-          "values": [true, false]
+          "values": [
+            true,
+            false
+          ]
         },
         "tau": {
           "type": "categorical",
-          "values": [0.1, 0.5, 1.0]
+          "values": [
+            0.1,
+            0.5,
+            1.0
+          ]
         },
         "temp_init": {
           "type": "categorical",
-          "values": [1.0, 1.5, 2.0]
+          "values": [
+            1.0,
+            1.5,
+            2.0
+          ]
         },
         "temp_decay": {
           "type": "categorical",
-          "values": [0.9995, 0.9997, 0.99985, 0.9999]
+          "values": [
+            0.9995,
+            0.9997,
+            0.99985,
+            0.9999
+          ]
         },
         "temp_min": {
           "type": "categorical",
-          "values": [0.1, 0.2]
+          "values": [
+            0.1,
+            0.2
+          ]
         },
         "max_grad_norm": {
           "type": "categorical",
-          "values": [5.0, 10.0]
+          "values": [
+            5.0,
+            10.0
+          ]
         },
         "mixing_embed_dim": {
           "type": "categorical",
-          "values": [32, 64, 128]
+          "values": [
+            32,
+            64,
+            128
+          ]
         },
         "mixing_widths": {
           "type": "categorical",
           "values": [
-            [64],
-            [128],
-            [128, 128]
+            [
+              64
+            ],
+            [
+              128
+            ],
+            [
+              128,
+              128
+            ]
           ],
           "length_target": "mixing_num_hidden"
         },
         "mixing_weight_clip": {
           "type": "categorical",
-          "values": [null, 5.0, 10.0]
+          "values": [
+            null,
+            5.0,
+            10.0
+          ]
         },
         "q_tot_clip": {
           "type": "categorical",
-          "values": [null, 20.0, 50.0]
+          "values": [
+            null,
+            20.0,
+            50.0
+          ]
         },
         "share_parameters": {
           "type": "constant",
@@ -445,33 +731,74 @@
         "critic_hidden_sizes": {
           "type": "categorical",
           "values": [
-            [128, 128],
-            [128, 128, 128],
-            [160, 128],
-            [160, 160]
+            [
+              128,
+              128
+            ],
+            [
+              128,
+              128,
+              128
+            ],
+            [
+              160,
+              128
+            ],
+            [
+              160,
+              160
+            ]
           ]
         },
         "set_embed_dim": {
           "type": "categorical",
-          "values": [128, 160]
+          "values": [
+            128,
+            160
+          ]
         },
         "set_encoder_hidden_sizes": {
           "type": "categorical",
           "values": [
-            [128, 96],
-            [128, 128],
-            [160, 96]
+            [
+              128,
+              96
+            ],
+            [
+              128,
+              128
+            ],
+            [
+              160,
+              96
+            ]
           ]
         },
         "include_team_size_feature": {
           "type": "categorical",
-          "values": [true, false]
+          "values": [
+            true,
+            false
+          ]
         }
       },
       "inherit": [
         {
           "from": "mappo",
-          "keys": ["lr", "batch_size", "num_epochs", "num_hidden", "widths", "rnn_hidden_dim", "clip_eps", "gamma", "gae_lambda", "entropy_coef", "value_coef", "max_grad_norm"],
+          "keys": [
+            "lr",
+            "batch_size",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm"
+          ],
           "required": true
         }
       ],
@@ -484,7 +811,11 @@
       "search": {
         "num_tokens": {
           "type": "categorical",
-          "values": [3, 4, 5]
+          "values": [
+            3,
+            4,
+            5
+          ]
         },
         "distill_weight": {
           "type": "float",
@@ -494,30 +825,73 @@
         },
         "teacher_ema_tau": {
           "type": "categorical",
-          "values": [0.0025, 0.005, 0.01]
+          "values": [
+            0.0025,
+            0.005,
+            0.01
+          ]
         },
         "ctx_logvar_bounds": {
           "type": "categorical",
           "values": [
-            [-1.5, 1.0],
-            [-1.0, 1.0],
-            [-0.5, 1.0],
-            [-0.25, 0.75],
-            [-0.25, 0.5],
-            [0.0, 0.5]
+            [
+              -1.5,
+              1.0
+            ],
+            [
+              -1.0,
+              1.0
+            ],
+            [
+              -0.5,
+              1.0
+            ],
+            [
+              -0.25,
+              0.75
+            ],
+            [
+              -0.25,
+              0.5
+            ],
+            [
+              0.0,
+              0.5
+            ]
           ],
-          "targets": ["ctx_logvar_min", "ctx_logvar_max"]
+          "targets": [
+            "ctx_logvar_min",
+            "ctx_logvar_max"
+          ]
         }
       },
       "inherit": [
         {
           "from": "mappo",
-          "keys": ["lr", "batch_size", "num_epochs", "num_hidden", "widths", "rnn_hidden_dim", "clip_eps", "gamma", "gae_lambda", "entropy_coef", "value_coef", "max_grad_norm"],
+          "keys": [
+            "lr",
+            "batch_size",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm"
+          ],
           "required": true
         },
         {
           "from": "pimac_v0",
-          "keys": ["critic_hidden_sizes", "set_embed_dim", "set_encoder_hidden_sizes", "include_team_size_feature"],
+          "keys": [
+            "critic_hidden_sizes",
+            "set_embed_dim",
+            "set_encoder_hidden_sizes",
+            "include_team_size_feature"
+          ],
           "required": true
         }
       ],
@@ -536,30 +910,75 @@
         },
         "teacher_ema_tau": {
           "type": "categorical",
-          "values": [0.0025, 0.005, 0.01, 0.02]
+          "values": [
+            0.0025,
+            0.005,
+            0.01,
+            0.02
+          ]
         },
         "ctx_logvar_bounds": {
           "type": "categorical",
           "values": [
-            [-0.5, 1.0],
-            [-0.5, 0.75],
-            [-0.5, 0.5],
-            [-0.25, 0.75],
-            [-0.25, 0.5],
-            [0.0, 0.5]
+            [
+              -0.5,
+              1.0
+            ],
+            [
+              -0.5,
+              0.75
+            ],
+            [
+              -0.5,
+              0.5
+            ],
+            [
+              -0.25,
+              0.75
+            ],
+            [
+              -0.25,
+              0.5
+            ],
+            [
+              0.0,
+              0.5
+            ]
           ],
-          "targets": ["ctx_logvar_min", "ctx_logvar_max"]
+          "targets": [
+            "ctx_logvar_min",
+            "ctx_logvar_max"
+          ]
         }
       },
       "inherit": [
         {
           "from": "mappo",
-          "keys": ["lr", "batch_size", "num_epochs", "num_hidden", "widths", "rnn_hidden_dim", "clip_eps", "gamma", "gae_lambda", "entropy_coef", "value_coef", "max_grad_norm"],
+          "keys": [
+            "lr",
+            "batch_size",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm"
+          ],
           "required": true
         },
         {
           "from": "pimac_v1",
-          "keys": ["critic_hidden_sizes", "set_embed_dim", "set_encoder_hidden_sizes", "include_team_size_feature", "num_tokens"],
+          "keys": [
+            "critic_hidden_sizes",
+            "set_embed_dim",
+            "set_encoder_hidden_sizes",
+            "include_team_size_feature",
+            "num_tokens"
+          ],
           "required": true
         }
       ],
@@ -578,24 +997,48 @@
         },
         "teacher_ema_tau": {
           "type": "categorical",
-          "values": [0.005, 0.01, 0.02]
+          "values": [
+            0.005,
+            0.01,
+            0.02
+          ]
         },
         "hypernet_rank": {
           "type": "categorical",
-          "values": [1, 2]
+          "values": [
+            1,
+            2
+          ]
         },
         "hypernet_hidden_sizes": {
           "type": "categorical",
           "values": [
-            [16, 16],
-            [32, 16],
-            [32, 32],
-            [64, 32]
+            [
+              16,
+              16
+            ],
+            [
+              32,
+              16
+            ],
+            [
+              32,
+              32
+            ],
+            [
+              64,
+              32
+            ]
           ]
         },
         "hypernet_delta_init_scale": {
           "type": "categorical",
-          "values": [0.001, 0.0025, 0.005, 0.01]
+          "values": [
+            0.001,
+            0.0025,
+            0.005,
+            0.01
+          ]
         },
         "hypernet_l2_coef": {
           "type": "float",
@@ -607,16 +1050,128 @@
       "inherit": [
         {
           "from": "mappo",
-          "keys": ["lr", "batch_size", "num_epochs", "num_hidden", "widths", "rnn_hidden_dim", "clip_eps", "gamma", "gae_lambda", "entropy_coef", "value_coef", "max_grad_norm"],
+          "keys": [
+            "lr",
+            "batch_size",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm"
+          ],
           "required": true
         },
         {
           "from": "pimac_v2",
-          "keys": ["critic_hidden_sizes", "set_embed_dim", "set_encoder_hidden_sizes", "include_team_size_feature", "num_tokens", "ctx_logvar_min", "ctx_logvar_max"],
+          "keys": [
+            "critic_hidden_sizes",
+            "set_embed_dim",
+            "set_encoder_hidden_sizes",
+            "include_team_size_feature",
+            "num_tokens",
+            "ctx_logvar_min",
+            "ctx_logvar_max"
+          ],
           "required": true
         }
       ],
-      "note": "Shows hypernet-specific tuning on top of the v2 inheritance chain."
+      "note": "Shows the head-only hypernet study on top of the v2 inheritance chain."
+    },
+    {
+      "name": "pimac_v4",
+      "trials": 8,
+      "base_config": "simple_spread_dynamic_hard/configs/pimac_v4/default.json",
+      "search": {
+        "distill_weight": {
+          "type": "float",
+          "low": 8e-05,
+          "high": 0.0008,
+          "log": true
+        },
+        "teacher_ema_tau": {
+          "type": "categorical",
+          "values": [
+            0.005,
+            0.01,
+            0.02
+          ]
+        },
+        "hypernet_rank": {
+          "type": "categorical",
+          "values": [
+            1,
+            2
+          ]
+        },
+        "hypernet_hidden_sizes": {
+          "type": "categorical",
+          "values": [
+            [
+              16,
+              16
+            ],
+            [
+              32,
+              16
+            ],
+            [
+              32,
+              32
+            ],
+            [
+              64,
+              32
+            ]
+          ]
+        },
+        "hypernet_delta_init_scale": {
+          "type": "categorical",
+          "values": [
+            0.001,
+            0.0025,
+            0.005,
+            0.01
+          ]
+        },
+        "hypernet_l2_coef": {
+          "type": "float",
+          "low": 0.0001,
+          "high": 0.0015,
+          "log": true
+        }
+      },
+      "inherit": [
+        {
+          "from": "pimac_v3",
+          "keys": [
+            "lr",
+            "batch_size",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm",
+            "critic_hidden_sizes",
+            "set_embed_dim",
+            "set_encoder_hidden_sizes",
+            "include_team_size_feature",
+            "num_tokens",
+            "ctx_logvar_min",
+            "ctx_logvar_max"
+          ]
+        }
+      ],
+      "note": "Shows the FiLM-plus-head study inheriting the stabilized backbone from pimac_v3."
     },
     {
       "name": "random",

@@ -1,21 +1,25 @@
 """
-PIMACV0 implementation for parallel multi-agent environments.
+PIMACV4 implementation for parallel multi-agent environments.
 
-PIMACV0 is MAPPO with one architectural change:
-- the centralized critic uses a Deep-Sets encoder (`phi` + masked pooling + `rho`)
-  instead of fixed-width observation concatenation.
+PIMACV4 extends `pimac_v3` with extra context-conditioned feature modulation:
+- A token-based set teacher produces per-agent cooperation context through
+  masked cross-attention.
+- The centralized critic consumes teacher tokens for team-value estimation.
+- The decentralized actor predicts student context (`mu`, `logvar`) from local
+  recurrent features, modulates those features with uncertainty-gated FiLM, and
+  then applies a gated low-rank residual hypernetwork over the policy head.
+- Student context is trained by heteroscedastic distillation against teacher
+  context, while PPO remains on-policy.
 
-Everything else follows canonical MAPPO semantics used in this repository:
-- shared decentralized recurrent actor,
-- centralized critic for team values,
-- team-level GAE(lambda),
-- PPO clipping + entropy bonus,
-- on-policy replay cleared after updates.
+This keeps canonical MAPPO optimization semantics (PPO clip + GAE + entropy),
+while adding centralized context supervision that is not available at inference.
 """
 
 from __future__ import annotations
 
 from collections import deque
+import copy
+import math
 import random
 from typing import Optional, Sequence
 
@@ -34,14 +38,15 @@ from algorithms.base import (
 )
 
 __all__ = [
-    "PIMACV0ActorRNN",
+    "PIMACV4ActorRNN",
+    "SetTokenTeacher",
     "SetValueCritic",
-    "PIMACV0",
-    "PIMACV0_DEFAULT_CONFIG",
+    "PIMACV4",
+    "PIMACV4_DEFAULT_CONFIG",
 ]
 
 
-PIMACV0_DEFAULT_CONFIG = {
+PIMACV4_DEFAULT_CONFIG = {
     "buffer_size": 2048,
     "batch_size": 32,
     "lr": 3e-4,
@@ -60,12 +65,21 @@ PIMACV0_DEFAULT_CONFIG = {
     "set_embed_dim": 128,
     "set_encoder_hidden_sizes": (128, 128),
     "include_team_size_feature": True,
+    "num_tokens": 4,
+    "distill_weight": 0.1,
+    "teacher_ema_tau": 0.01,
+    "hypernet_rank": 4,
+    "hypernet_hidden_sizes": (128, 128),
+    "hypernet_delta_init_scale": 0.05,
+    "hypernet_l2_coef": 1e-4,
+    "ctx_logvar_min": -6.0,
+    "ctx_logvar_max": 4.0,
     "update_every_episodes": 1,
 }
 
 
 def _build_mlp(in_dim: int, hidden_sizes: Sequence[int], out_dim: int) -> nn.Sequential:
-    """Build a plain ReLU MLP used by the centralized value critic."""
+    """Build a feed-forward ReLU MLP."""
     layers: list[nn.Module] = []
     current_dim = int(in_dim)
     for hidden_dim in hidden_sizes:
@@ -82,7 +96,6 @@ def _sorted_agent_ids(keys) -> list:
 
 
 def _parameter_grad_norm(parameters) -> float:
-    """Return the global L2 norm of parameter gradients."""
     total = 0.0
     for parameter in parameters:
         if parameter.grad is None:
@@ -91,11 +104,19 @@ def _parameter_grad_norm(parameters) -> float:
     return float(total ** 0.5)
 
 
-class PIMACV0ActorRNN(nn.Module):
+class PIMACV4ActorRNN(nn.Module):
     """
-    Shared recurrent actor used by all agents.
+    Shared recurrent actor with student context heads.
 
-    The actor maps one agent's local observation sequence to categorical action logits.
+    The actor predicts:
+    - action logits,
+    - context mean (`ctx_mu`) and log-variance (`ctx_logvar`) for distillation.
+
+    Policy conditioning follows uncertainty-gated FiLM + hypernetwork residuals:
+    - FiLM scale/shift are predicted from student context mean.
+    - A scalar gate from student uncertainty scales FiLM strength.
+    - A low-rank hypernetwork predicts residual policy-head deltas from context.
+    - The same uncertainty gate scales the hypernetwork parameter deltas.
     """
 
     def __init__(
@@ -105,9 +126,17 @@ class PIMACV0ActorRNN(nn.Module):
         num_hidden: int,
         widths: Sequence[int],
         rnn_hidden_dim: int,
+        ctx_dim: int,
+        hypernet_rank: int = 4,
+        hypernet_hidden_sizes: Sequence[int] = (128, 128),
+        hypernet_delta_init_scale: float = 0.05,
+        ctx_logvar_min: float = -6.0,
+        ctx_logvar_max: float = 4.0,
     ):
         super().__init__()
-        assert len(widths) == (int(num_hidden) + 1), "PIMACV0 actor widths and layer count mismatch."
+        assert len(widths) == (int(num_hidden) + 1), "PIMACV4 actor widths and layer count mismatch."
+        if int(hypernet_rank) <= 0:
+            raise ValueError("PIMACV4 hypernet_rank must be a positive integer.")
 
         self.input_layer = nn.Linear(int(obs_dim), int(widths[0]))
         self.hidden_layers = nn.ModuleList(
@@ -115,7 +144,32 @@ class PIMACV0ActorRNN(nn.Module):
             for layer_index in range(int(num_hidden))
         )
         self.rnn = nn.GRU(input_size=int(widths[-1]), hidden_size=int(rnn_hidden_dim), batch_first=True)
-        self.policy_head = nn.Linear(int(rnn_hidden_dim), int(action_dim))
+
+        self.hidden_dim = int(rnn_hidden_dim)
+        self.action_dim = int(action_dim)
+        self.hypernet_rank = int(hypernet_rank)
+        self.hypernet_delta_init_scale = float(hypernet_delta_init_scale)
+
+        self.ctx_mu_head = nn.Linear(self.hidden_dim, int(ctx_dim))
+        self.ctx_logvar_head = nn.Linear(self.hidden_dim, int(ctx_dim))
+        self.film_head = nn.Linear(int(ctx_dim), 2 * self.hidden_dim)
+        self.gate_weight = nn.Parameter(torch.tensor(1.0, dtype=torch.float32))
+        self.gate_bias = nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
+        # Learned base policy head; hypernetwork generates a context-conditioned residual.
+        self.policy_head = nn.Linear(self.hidden_dim, self.action_dim)
+        low_rank_weight_width = self.hidden_dim * self.hypernet_rank
+        low_rank_action_width = self.hypernet_rank * self.action_dim
+        self._hypernet_weight_out = low_rank_weight_width
+        self._hypernet_action_out = low_rank_action_width
+        hypernet_output_dim = low_rank_weight_width + low_rank_action_width + self.action_dim
+        self.hypernet_delta_head = _build_mlp(
+            in_dim=int(ctx_dim),
+            hidden_sizes=tuple(hypernet_hidden_sizes),
+            out_dim=hypernet_output_dim,
+        )
+
+        self.ctx_logvar_min = float(ctx_logvar_min)
+        self.ctx_logvar_max = float(ctx_logvar_max)
 
     def _encode(self, input_features: torch.Tensor) -> torch.Tensor:
         """Encode flattened observations with the actor MLP stack."""
@@ -124,15 +178,29 @@ class PIMACV0ActorRNN(nn.Module):
             encoded_features = torch.relu(hidden_layer(encoded_features))
         return encoded_features
 
-    def forward(self, obs_seq: torch.Tensor, h0: Optional[torch.Tensor] = None):
+    def forward(
+        self,
+        obs_seq: torch.Tensor,
+        h0: Optional[torch.Tensor] = None,
+        return_aux: bool = False,
+    ):
         """
         Args:
             obs_seq: Observation sequence with shape [B, T, obs_dim].
             h0: Optional GRU initial state [1, B, H].
+            return_aux: When true, also return student context tensors.
 
         Returns:
             logits: [B, T, action_dim]
             hn: [1, B, H]
+            aux (optional):
+                - ctx_mu: [B, T, ctx_dim]
+                - ctx_logvar: [B, T, ctx_dim]
+                - gate: [B, T, 1]
+                - delta_w_l2: [B, T]
+                - delta_b_l2: [B, T]
+                - delta_w_norm: [B, T]
+                - delta_b_norm: [B, T]
         """
         batch_size, num_timesteps, observation_dim = obs_seq.shape
         encoded_sequence = self._encode(obs_seq.reshape(batch_size * num_timesteps, observation_dim)).reshape(
@@ -141,103 +209,260 @@ class PIMACV0ActorRNN(nn.Module):
             -1,
         )
         recurrent_features, next_hidden_state = self.rnn(encoded_sequence, h0)
-        action_logits = self.policy_head(recurrent_features)
-        return action_logits, next_hidden_state
+
+        context_mean = self.ctx_mu_head(recurrent_features)
+        context_log_variance = torch.clamp(
+            self.ctx_logvar_head(recurrent_features),
+            min=self.ctx_logvar_min,
+            max=self.ctx_logvar_max,
+        )
+
+        # FiLM parameters are predicted from student context mean.
+        film_parameters = self.film_head(context_mean)
+        film_scale, film_shift = torch.chunk(film_parameters, 2, dim=-1)
+
+        # Higher uncertainty (larger log-variance) reduces modulation strength.
+        mean_log_variance = context_log_variance.mean(dim=-1, keepdim=True)
+        modulation_gate = torch.sigmoid(self.gate_weight * (-mean_log_variance) + self.gate_bias)
+
+        # Uncertainty-gated FiLM modulation over recurrent policy features.
+        modulated_recurrent_features = (
+            recurrent_features * (1.0 + modulation_gate * film_scale)
+            + modulation_gate * film_shift
+        )
+
+        # Hypernetwork predicts low-rank policy-head residual factors from context.
+        hypernet_deltas = self.hypernet_delta_head(context_mean) * self.hypernet_delta_init_scale
+        weight_factor_flat = hypernet_deltas[..., : self._hypernet_weight_out]
+        action_factor_flat = hypernet_deltas[..., self._hypernet_weight_out : self._hypernet_weight_out + self._hypernet_action_out]
+        delta_bias = hypernet_deltas[..., self._hypernet_weight_out + self._hypernet_action_out :]
+
+        weight_factor = weight_factor_flat.reshape(batch_size, num_timesteps, self.hidden_dim, self.hypernet_rank)
+        action_factor = action_factor_flat.reshape(batch_size, num_timesteps, self.hypernet_rank, self.action_dim)
+        delta_weight = torch.einsum("bthr,btra->btha", weight_factor, action_factor)
+
+        gate_for_params = modulation_gate.unsqueeze(-1)
+        base_weight = self.policy_head.weight.t().contiguous().view(1, 1, self.hidden_dim, self.action_dim)
+        base_bias = self.policy_head.bias.view(1, 1, self.action_dim)
+        effective_weight = base_weight + gate_for_params * delta_weight
+        effective_bias = base_bias + modulation_gate * delta_bias
+
+        action_logits = torch.einsum("bth,btha->bta", modulated_recurrent_features, effective_weight) + effective_bias
+
+        delta_w_l2 = delta_weight.pow(2).sum(dim=(-1, -2))
+        delta_b_l2 = delta_bias.pow(2).sum(dim=-1)
+        delta_w_norm = torch.sqrt(delta_w_l2 + 1e-12)
+        delta_b_norm = torch.sqrt(delta_b_l2 + 1e-12)
+
+        if not return_aux:
+            return action_logits, next_hidden_state
+        return action_logits, next_hidden_state, {
+            "ctx_mu": context_mean,
+            "ctx_logvar": context_log_variance,
+            "gate": modulation_gate,
+            "delta_w_l2": delta_w_l2,
+            "delta_b_l2": delta_b_l2,
+            "delta_w_norm": delta_w_norm,
+            "delta_b_norm": delta_b_norm,
+        }
 
 
-class SetValueCritic(nn.Module):
+class SetTokenTeacher(nn.Module):
     """
-    Centralized team-value critic with Deep-Sets pooling.
+    Token-based set teacher with masked cross-attention.
 
-    The critic is permutation- and size-invariant with respect to agent order:
-    1. `phi` embeds each agent observation independently.
-    2. Embeddings are masked and pooled with a masked mean over agents.
-    3. Optional team-size feature is concatenated.
-    4. `rho` maps pooled context to scalar team value.
+    Inputs:
+        obs: [B, T, N, obs_dim]
+        active_mask: [B, T, N] in {0,1}
 
-    This removes any architectural dependency on a configured maximum number of agents.
+    Outputs:
+        tokens: [B, T, K, D]
+        ctx_teacher: [B, T, N, D]
     """
 
     def __init__(
         self,
         obs_dim: int,
         set_embed_dim: int,
+        num_tokens: int,
         set_encoder_hidden_sizes: Sequence[int],
-        critic_hidden_sizes: Sequence[int],
-        include_team_size_feature: bool = True,
     ):
         super().__init__()
         self.obs_dim = int(obs_dim)
         self.set_embed_dim = int(set_embed_dim)
-        self.include_team_size_feature = bool(include_team_size_feature)
+        self.num_tokens = int(num_tokens)
 
-        # Shared element-wise encoder `phi`: obs_i -> embedding_i.
-        self.phi = _build_mlp(
+        # Shared set encoder phi(o_i).
+        self.agent_mlp = _build_mlp(
             in_dim=self.obs_dim,
             hidden_sizes=tuple(set_encoder_hidden_sizes),
             out_dim=self.set_embed_dim,
         )
-        pooled_dim = self.set_embed_dim + (1 if self.include_team_size_feature else 0)
-        # Set-level head `rho`: pooled_embedding -> scalar value.
-        self.rho = _build_mlp(
-            in_dim=pooled_dim,
-            hidden_sizes=tuple(critic_hidden_sizes),
-            out_dim=1,
-        )
+        # Learnable token queries used to summarize the active set.
+        self.token_queries = nn.Parameter(torch.randn(self.num_tokens, self.set_embed_dim) * 0.02)
 
-    def forward(self, obs: torch.Tensor, active_mask: torch.Tensor) -> torch.Tensor:
+    @staticmethod
+    def _masked_cross_attention(
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        key_mask: Optional[torch.Tensor],
+    ) -> torch.Tensor:
         """
+        Mask-safe scaled dot-product attention.
+
+        query: [B, T, Q, D]
+        key: [B, T, M, D]
+        value: [B, T, M, D]
+        key_mask: optional [B, T, M]
+        """
+        scale = math.sqrt(float(query.shape[-1]))
+        attention_scores = torch.einsum("btqd,btmd->btqm", query, key) / max(scale, 1e-8)
+
+        if key_mask is None:
+            attention_weights = torch.softmax(attention_scores, dim=-1)
+            return torch.einsum("btqm,btmd->btqd", attention_weights, value)
+
+        key_mask_boolean = key_mask.to(dtype=torch.bool, device=attention_scores.device)
+        attention_scores = attention_scores.masked_fill(~key_mask_boolean.unsqueeze(2), -1e9)
+
+        attention_weights = torch.softmax(attention_scores, dim=-1)
+        attention_weights = attention_weights * key_mask_boolean.unsqueeze(2).to(dtype=attention_weights.dtype)
+        attention_weights = attention_weights / attention_weights.sum(dim=-1, keepdim=True).clamp(min=1e-8)
+        return torch.einsum("btqm,btmd->btqd", attention_weights, value)
+
+    def forward(self, obs: torch.Tensor, active_mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Extract set tokens and per-agent teacher context.
+
         Args:
             obs: [B, T, N, obs_dim]
             active_mask: [B, T, N]
 
         Returns:
-            team_values: [B, T]
+            tokens: [B, T, K, D]
+            ctx_teacher: [B, T, N, D]
         """
         batch_size, num_timesteps, num_agents, observation_dim = obs.shape
-        if observation_dim != self.obs_dim:
-            raise ValueError(
-                f"Observation dimension mismatch: expected {self.obs_dim}, got {observation_dim}."
-            )
 
-        active_mask = active_mask.to(dtype=obs.dtype)
-        embedded_agents = self.phi(obs.reshape(batch_size * num_timesteps * num_agents, observation_dim)).reshape(
+        agent_embeddings = self.agent_mlp(
+            obs.reshape(batch_size * num_timesteps * num_agents, observation_dim)
+        ).reshape(batch_size, num_timesteps, num_agents, self.set_embed_dim)
+
+        expanded_token_queries = self.token_queries.view(1, 1, self.num_tokens, self.set_embed_dim).expand(
             batch_size,
             num_timesteps,
-            num_agents,
-            self.set_embed_dim,
+            -1,
+            -1,
         )
 
-        # Inactive/padded slots are zeroed before pooling.
-        masked_embeddings = embedded_agents * active_mask.unsqueeze(-1)
-        active_count = active_mask.sum(dim=2, keepdim=True)
-        pooled_embedding = masked_embeddings.sum(dim=2) / active_count.clamp(min=1.0)
+        tokens = self._masked_cross_attention(
+            expanded_token_queries,
+            agent_embeddings,
+            agent_embeddings,
+            key_mask=active_mask,
+        )
+        ctx_teacher = self._masked_cross_attention(
+            agent_embeddings,
+            tokens,
+            tokens,
+            key_mask=None,
+        )
+
+        # Keep padded/inactive slots strictly zero for clean masked reductions.
+        ctx_teacher = ctx_teacher * active_mask.unsqueeze(-1)
+        return tokens, ctx_teacher
+
+
+class SetValueCritic(nn.Module):
+    """
+    Centralized critic with tokenized team context.
+
+    The teacher produces coordination tokens and per-agent context. Team value is
+    predicted from pooled tokens via `rho`.
+    """
+
+    def __init__(
+        self,
+        obs_dim: int,
+        set_embed_dim: int,
+        num_tokens: int,
+        set_encoder_hidden_sizes: Sequence[int],
+        critic_hidden_sizes: Sequence[int],
+        include_team_size_feature: bool = True,
+    ):
+        super().__init__()
+        self.set_embed_dim = int(set_embed_dim)
+        self.include_team_size_feature = bool(include_team_size_feature)
+
+        self.teacher = SetTokenTeacher(
+            obs_dim=int(obs_dim),
+            set_embed_dim=self.set_embed_dim,
+            num_tokens=int(num_tokens),
+            set_encoder_hidden_sizes=tuple(set_encoder_hidden_sizes),
+        )
+
+        pooled_dim = self.set_embed_dim + (1 if self.include_team_size_feature else 0)
+        self.value_mlp = _build_mlp(
+            in_dim=pooled_dim,
+            hidden_sizes=tuple(critic_hidden_sizes),
+            out_dim=1,
+        )
+
+    def forward(
+        self,
+        obs: torch.Tensor,
+        active_mask: torch.Tensor,
+        return_details: bool = False,
+    ):
+        """
+        Args:
+            obs: [B, T, N, obs_dim]
+            active_mask: [B, T, N]
+            return_details: include tokens/context when true.
+
+        Returns:
+            team_values: [B, T]
+            (optional) tokens: [B, T, K, D], ctx_teacher: [B, T, N, D]
+        """
+        tokens, ctx_teacher = self.teacher(obs, active_mask)
+        team_context = tokens.mean(dim=2)
 
         if self.include_team_size_feature:
-            # Keep explicit team-size signal while preserving invariance to padded inactive slots.
-            # We use the active-agent count itself, which depends only on the mask.
-            critic_input = torch.cat([pooled_embedding, active_count], dim=-1)
+            active_count = active_mask.sum(dim=2, keepdim=True)
+            value_input = torch.cat([team_context, active_count], dim=-1)
         else:
-            critic_input = pooled_embedding
+            value_input = team_context
 
-        values = self.rho(critic_input.reshape(batch_size * num_timesteps, -1)).reshape(batch_size, num_timesteps)
-        return values
+        batch_size, num_timesteps, context_dim = value_input.shape
+        team_values = self.value_mlp(value_input.reshape(batch_size * num_timesteps, context_dim)).reshape(
+            batch_size,
+            num_timesteps,
+        )
+
+        if not return_details:
+            return team_values
+        return team_values, tokens, ctx_teacher
 
 
-class PIMACV0(ParallelLearner):
+class PIMACV4(ParallelLearner):
     """
-    Shared PIMACV0 implementation core backing the public parallel learner.
+    Shared PIMACV4 implementation core backing the public parallel learner.
 
-    Responsibilities:
-    - Shared actor/critic construction.
-    - Robust replay coercion for dict/array transition data.
-    - Episode finalization with roster alignment for variable team sizes.
-    - Team-level GAE, PPO updates, diagnostics, and mode switching.
+    Core responsibilities:
+    - shared actor/critic construction,
+    - robust replay coercion and episode finalization,
+    - team-level GAE and PPO losses,
+    - teacher-student distillation with EMA teacher targets,
+    - diagnostics tracking for scripts/plots.
+
+    Compared with `pimac_v3`, this variant adds uncertainty-gated FiLM over the
+    recurrent policy features before the context-adapted policy head.
     """
 
     @staticmethod
     def normalize_config(config: dict) -> dict:
-        return normalize_config(config, PIMACV0_DEFAULT_CONFIG)
+        return normalize_config(config, PIMACV4_DEFAULT_CONFIG)
 
     def __init__(self, env_spec: ParallelEnvSpec, config: dict, device: str = "cpu"):
         super().__init__(env_spec=env_spec, config=self.normalize_config(config), device=device)
@@ -254,32 +479,52 @@ class PIMACV0(ParallelLearner):
         self.max_grad_norm = float(config["max_grad_norm"]) if config["max_grad_norm"] is not None else None
         self.update_every_episodes = int(config["update_every_episodes"])
 
-        self.actor_net = PIMACV0ActorRNN(
+        self.set_embed_dim = int(config["set_embed_dim"])
+        self.num_tokens = int(config["num_tokens"])
+        self.distill_weight = float(config["distill_weight"])
+        self.teacher_ema_tau = float(max(0.0, min(1.0, config["teacher_ema_tau"])))
+        self.hypernet_rank = int(config["hypernet_rank"])
+        self.hypernet_hidden_sizes = tuple(config["hypernet_hidden_sizes"])
+        self.hypernet_delta_init_scale = float(config["hypernet_delta_init_scale"])
+        self.hypernet_l2_coef = float(config["hypernet_l2_coef"])
+
+        self.actor_net = PIMACV4ActorRNN(
             obs_dim=self.obs_size,
             action_dim=self.action_space_size,
             num_hidden=int(config["num_hidden"]),
             widths=tuple(config["widths"]),
             rnn_hidden_dim=int(config["rnn_hidden_dim"]),
+            ctx_dim=self.set_embed_dim,
+            hypernet_rank=self.hypernet_rank,
+            hypernet_hidden_sizes=self.hypernet_hidden_sizes,
+            hypernet_delta_init_scale=self.hypernet_delta_init_scale,
+            ctx_logvar_min=float(config["ctx_logvar_min"]),
+            ctx_logvar_max=float(config["ctx_logvar_max"]),
         ).to(self.device)
 
         self.critic = SetValueCritic(
             obs_dim=self.obs_size,
-            set_embed_dim=int(config["set_embed_dim"]),
+            set_embed_dim=self.set_embed_dim,
+            num_tokens=self.num_tokens,
             set_encoder_hidden_sizes=tuple(config["set_encoder_hidden_sizes"]),
             critic_hidden_sizes=tuple(config["critic_hidden_sizes"]),
             include_team_size_feature=bool(config["include_team_size_feature"]),
         ).to(self.device)
+
+        # EMA target teacher for stable distillation targets.
+        self.target_teacher = copy.deepcopy(self.critic.teacher).to(self.device)
+        self.target_teacher.eval()
+        for parameter in self.target_teacher.parameters():
+            parameter.requires_grad_(False)
 
         self.optimizer = optim.Adam(
             list(self._actor_parameters()) + list(self.critic.parameters()),
             lr=float(config["lr"]),
         )
 
-        # On-policy replay over finalized episodes.
         self.memory = deque(maxlen=int(config["buffer_size"]))
         self._episode_steps: list[dict] = []
 
-        # Inference-only recurrent states keyed by environment agent ids.
         self._inference_hidden: dict[object, torch.Tensor] = {}
         self._episode_finished = False
 
@@ -387,7 +632,6 @@ class PIMACV0(ParallelLearner):
                     axis=0,
                 )
             else:
-                # Parallel terminal steps can report empty next-observation dictionaries.
                 next_observation_array = np.zeros((0, observation_array.shape[-1]), dtype=np.float32)
         else:
             next_observation_array = np.asarray(next_observations, dtype=np.float32)
@@ -456,15 +700,24 @@ class PIMACV0(ParallelLearner):
             self._episode_steps = []
             self._episode_finished = True
 
-    def _actor_forward(self, obs: torch.Tensor) -> torch.Tensor:
+    def _actor_forward(self, obs: torch.Tensor, return_aux: bool = False):
         """
         Run shared actor over a padded minibatch tensor.
 
         Args:
             obs: [B, T, N, obs_dim]
+            return_aux: return student context heads when true.
 
         Returns:
             logits: [B, T, N, action_dim]
+            aux (optional):
+                - ctx_mu: [B, T, N, D]
+                - ctx_logvar: [B, T, N, D]
+                - gate: [B, T, N, 1]
+                - delta_w_l2: [B, T, N]
+                - delta_b_l2: [B, T, N]
+                - delta_w_norm: [B, T, N]
+                - delta_b_norm: [B, T, N]
         """
         batch_size, num_timesteps, num_agents, observation_dim = obs.shape
         flattened_agent_sequences = obs.permute(0, 2, 1, 3).reshape(
@@ -472,6 +725,21 @@ class PIMACV0(ParallelLearner):
             num_timesteps,
             observation_dim,
         )
+
+        if return_aux:
+            flattened_logits, _, flattened_aux = self.actor_net(flattened_agent_sequences, None, return_aux=True)
+            action_logits = flattened_logits.reshape(batch_size, num_agents, num_timesteps, -1).permute(0, 2, 1, 3)
+            aux = {
+                "ctx_mu": flattened_aux["ctx_mu"].reshape(batch_size, num_agents, num_timesteps, -1).permute(0, 2, 1, 3),
+                "ctx_logvar": flattened_aux["ctx_logvar"].reshape(batch_size, num_agents, num_timesteps, -1).permute(0, 2, 1, 3),
+                "gate": flattened_aux["gate"].reshape(batch_size, num_agents, num_timesteps, -1).permute(0, 2, 1, 3),
+                "delta_w_l2": flattened_aux["delta_w_l2"].reshape(batch_size, num_agents, num_timesteps).permute(0, 2, 1),
+                "delta_b_l2": flattened_aux["delta_b_l2"].reshape(batch_size, num_agents, num_timesteps).permute(0, 2, 1),
+                "delta_w_norm": flattened_aux["delta_w_norm"].reshape(batch_size, num_agents, num_timesteps).permute(0, 2, 1),
+                "delta_b_norm": flattened_aux["delta_b_norm"].reshape(batch_size, num_agents, num_timesteps).permute(0, 2, 1),
+            }
+            return action_logits, aux
+
         flattened_logits, _ = self.actor_net(flattened_agent_sequences, None)
         action_logits = flattened_logits.reshape(batch_size, num_agents, num_timesteps, -1).permute(0, 2, 1, 3)
         return action_logits
@@ -657,9 +925,6 @@ class PIMACV0(ParallelLearner):
         Padding is dynamic and local to the sampled minibatch:
         we pad to the largest team size present in this batch only.
         The PIMAC update path does not expand tensors to `env_spec.max_agents`.
-
-        This padding exists solely for dense tensor batching; the critic itself is
-        size-invariant and does not depend on a configured max-agent architecture.
         """
         max_num_timesteps = max(int(episode["T"]) for episode in batch)
         max_num_agents = max(int(episode["N"]) for episode in batch)
@@ -733,51 +998,29 @@ class PIMACV0(ParallelLearner):
         advantage_std = valid_advantages.std(unbiased=False)
         return (advantages - advantage_mean) / (advantage_std + 1e-8)
 
-    def _compute_policy_terms(
-        self,
-        obs: torch.Tensor,
-        actions: torch.Tensor,
-        old_log_probs: torch.Tensor,
-        advantages: torch.Tensor,
-        combined_mask: torch.Tensor,
-    ) -> dict[str, torch.Tensor]:
-        """Compute clipped PPO policy objective and entropy bonus."""
-        action_logits = self._actor_forward(obs)
-        categorical_distribution = torch.distributions.Categorical(logits=action_logits)
-        new_log_probabilities = categorical_distribution.log_prob(actions)
-        action_entropy = categorical_distribution.entropy()
+    @staticmethod
+    def _teacher_ema_update(target_teacher: SetTokenTeacher, online_teacher: SetTokenTeacher, tau: float) -> None:
+        """EMA update for teacher parameters and floating buffers."""
+        for target_parameter, online_parameter in zip(target_teacher.parameters(), online_teacher.parameters()):
+            target_parameter.data.mul_(1.0 - tau).add_(online_parameter.data, alpha=tau)
 
-        broadcast_advantages = advantages.unsqueeze(-1).expand_as(new_log_probabilities)
-        importance_ratio = torch.exp(new_log_probabilities - old_log_probs)
-        unclipped_surrogate = importance_ratio * broadcast_advantages
-        clipped_surrogate = torch.clamp(importance_ratio, 1.0 - self.clip_eps, 1.0 + self.clip_eps) * broadcast_advantages
+        for target_buffer, online_buffer in zip(target_teacher.buffers(), online_teacher.buffers()):
+            if torch.is_floating_point(target_buffer):
+                target_buffer.data.mul_(1.0 - tau).add_(online_buffer.data, alpha=tau)
+            else:
+                target_buffer.data.copy_(online_buffer.data)
 
-        num_active_decisions = combined_mask.sum().clamp(min=1.0)
-        policy_loss = -(torch.min(unclipped_surrogate, clipped_surrogate) * combined_mask).sum() / num_active_decisions
-        entropy_bonus = (action_entropy * combined_mask).sum() / num_active_decisions
+    def _teacher_for_targets(self) -> SetTokenTeacher:
+        """Select teacher used as distillation target source."""
+        if self.teacher_ema_tau > 0.0:
+            return self.target_teacher
+        return self.critic.teacher
 
-        return {
-            "new_log_probs": new_log_probabilities,
-            "ratio": importance_ratio,
-            "policy_loss": policy_loss,
-            "entropy_bonus": entropy_bonus,
-            "decision_denom": num_active_decisions,
-        }
-
-    def _compute_value_terms(
-        self,
-        obs: torch.Tensor,
-        active_mask: torch.Tensor,
-        returns: torch.Tensor,
-        valid_time: torch.Tensor,
-    ) -> dict[str, torch.Tensor]:
-        """Compute centralized value loss over valid timesteps."""
-        predicted_values = self.critic(obs, active_mask)
-        value_loss = (((returns - predicted_values) ** 2) * valid_time).sum() / valid_time.sum().clamp(min=1.0)
-        return {
-            "values": predicted_values,
-            "value_loss": value_loss,
-        }
+    def _update_target_teacher(self) -> None:
+        """Apply EMA update to target teacher if enabled."""
+        if self.teacher_ema_tau <= 0.0:
+            return
+        self._teacher_ema_update(self.target_teacher, self.critic.teacher, self.teacher_ema_tau)
 
     def _compute_update_diagnostics(
         self,
@@ -790,8 +1033,14 @@ class PIMACV0(ParallelLearner):
         new_log_probs: torch.Tensor,
         ratio: torch.Tensor,
         decision_denom: torch.Tensor,
+        ctx_logvar: torch.Tensor,
+        gate: torch.Tensor,
+        delta_w_norm: torch.Tensor,
+        delta_b_norm: torch.Tensor,
+        tokens: torch.Tensor,
+        teacher_context: torch.Tensor,
     ) -> dict[str, torch.Tensor | float]:
-        """Compute PPO training diagnostics for one optimizer update."""
+        """Compute training diagnostics for one optimizer update."""
         with torch.no_grad():
             log_probability_ratio = new_log_probs - old_log_probs
             approx_kl = ((-log_probability_ratio) * combined_mask).sum() / decision_denom
@@ -815,20 +1064,63 @@ class PIMACV0(ParallelLearner):
             active_agents_per_timestep = active_mask.sum(dim=-1)
             active_agents_mean = self._masked_mean(active_agents_per_timestep, valid_time)
 
+            token_norm = tokens.norm(dim=-1)
+            token_norm_mean = self._masked_mean(token_norm.mean(dim=2), valid_time)
+
+            teacher_context_norm = teacher_context.norm(dim=-1)
+            teacher_ctx_norm_mean = self._masked_mean(teacher_context_norm, combined_mask)
+
+            mean_log_variance_per_agent = ctx_logvar.mean(dim=-1)
+            selected_log_variances = mean_log_variance_per_agent[combined_mask.bool()]
+            if selected_log_variances.numel() > 0:
+                ctx_logvar_mean = selected_log_variances.mean()
+                ctx_logvar_std = selected_log_variances.std(unbiased=False)
+            else:
+                ctx_logvar_mean = torch.tensor(0.0, device=self.device)
+                ctx_logvar_std = torch.tensor(0.0, device=self.device)
+
+            selected_gate_values = gate[combined_mask.bool()]
+            if selected_gate_values.numel() > 0:
+                gate_mean = selected_gate_values.mean()
+                gate_std = selected_gate_values.std(unbiased=False)
+            else:
+                gate_mean = torch.tensor(0.0, device=self.device)
+                gate_std = torch.tensor(0.0, device=self.device)
+
+            selected_delta_w_norm = delta_w_norm[combined_mask.bool()]
+            if selected_delta_w_norm.numel() > 0:
+                delta_w_norm_mean = selected_delta_w_norm.mean()
+            else:
+                delta_w_norm_mean = torch.tensor(0.0, device=self.device)
+
+            selected_delta_b_norm = delta_b_norm[combined_mask.bool()]
+            if selected_delta_b_norm.numel() > 0:
+                delta_b_norm_mean = selected_delta_b_norm.mean()
+            else:
+                delta_b_norm_mean = torch.tensor(0.0, device=self.device)
+
         return {
             "approx_kl": approx_kl,
             "clip_frac": clip_fraction,
             "explained_variance": explained_variance,
             "active_decisions": active_decision_count,
             "active_agents_mean": active_agents_mean,
+            "token_norm_mean": token_norm_mean,
+            "teacher_ctx_norm_mean": teacher_ctx_norm_mean,
+            "ctx_logvar_mean": ctx_logvar_mean,
+            "ctx_logvar_std": ctx_logvar_std,
+            "gate_mean": gate_mean,
+            "gate_std": gate_std,
+            "delta_w_norm_mean": delta_w_norm_mean,
+            "delta_b_norm_mean": delta_b_norm_mean,
         }
 
     def _run_update(self, global_step: int, episode_index: int) -> Optional[UpdateReport]:
         """
-        Run one PIMACV0 update phase.
+        Run one PIMACV4 update phase.
 
-        Each epoch samples on-policy finalized episodes, computes PPO + value losses,
-        performs one optimizer step, and logs diagnostics.
+        Each epoch samples on-policy episodes, computes PPO + value + distillation
+        losses, applies one optimizer step, logs diagnostics, and updates EMA teacher.
         """
         memory_items = len(self.memory)
         if memory_items < self.batch_size:
@@ -841,6 +1133,17 @@ class PIMACV0(ParallelLearner):
         mean_approx_kls: list[float] = []
         mean_clip_fracs: list[float] = []
         mean_explained_variances: list[float] = []
+        mean_distill_losses: list[float] = []
+        mean_distill_mses: list[float] = []
+        mean_hyper_l2s: list[float] = []
+        mean_ctx_logvar_means: list[float] = []
+        mean_ctx_logvar_stds: list[float] = []
+        mean_gate_means: list[float] = []
+        mean_gate_stds: list[float] = []
+        mean_delta_w_norms: list[float] = []
+        mean_delta_b_norms: list[float] = []
+        mean_token_norms: list[float] = []
+        mean_teacher_norms: list[float] = []
         mean_active_decisions: list[float] = []
         mean_active_agents: list[float] = []
         mean_grad_norms: list[float] = []
@@ -862,29 +1165,51 @@ class PIMACV0(ParallelLearner):
             valid_time = minibatch_tensors["valid_time"]
             total_samples_seen += int(valid_time.sum().item())
 
-            policy_terms = self._compute_policy_terms(
-                obs=observations,
-                actions=actions,
-                old_log_probs=old_log_probabilities,
-                advantages=normalized_advantages,
-                combined_mask=combined_mask,
-            )
-            value_terms = self._compute_value_terms(
-                obs=observations,
-                active_mask=active_mask,
-                returns=returns,
-                valid_time=valid_time,
-            )
+            action_logits, actor_aux = self._actor_forward(observations, return_aux=True)
+            categorical_distribution = torch.distributions.Categorical(logits=action_logits)
+            new_log_probabilities = categorical_distribution.log_prob(actions)
+            action_entropy = categorical_distribution.entropy()
 
-            policy_loss = policy_terms["policy_loss"]
-            entropy_bonus = policy_terms["entropy_bonus"]
-            importance_ratio = policy_terms["ratio"]
-            new_log_probabilities = policy_terms["new_log_probs"]
-            decision_denom = policy_terms["decision_denom"]
-            value_loss = value_terms["value_loss"]
-            predicted_values = value_terms["values"]
+            broadcast_advantages = normalized_advantages.unsqueeze(-1).expand_as(new_log_probabilities)
+            importance_ratio = torch.exp(new_log_probabilities - old_log_probabilities)
+            unclipped_surrogate = importance_ratio * broadcast_advantages
+            clipped_surrogate = torch.clamp(importance_ratio, 1.0 - self.clip_eps, 1.0 + self.clip_eps) * broadcast_advantages
 
-            total_loss = policy_loss + self.value_coef * value_loss - self.entropy_coef * entropy_bonus
+            decision_denom = combined_mask.sum().clamp(min=1.0)
+            policy_loss = -(torch.min(unclipped_surrogate, clipped_surrogate) * combined_mask).sum() / decision_denom
+            entropy_bonus = (action_entropy * combined_mask).sum() / decision_denom
+
+            predicted_values, tokens, teacher_context = self.critic(observations, active_mask, return_details=True)
+            value_loss = (((returns - predicted_values) ** 2) * valid_time).sum() / valid_time.sum().clamp(min=1.0)
+
+            teacher_for_targets = self._teacher_for_targets()
+            with torch.no_grad():
+                _, target_teacher_context = teacher_for_targets(observations, active_mask)
+
+            student_context_mean = actor_aux["ctx_mu"]
+            student_context_log_variance = actor_aux["ctx_logvar"]
+            uncertainty_gate = actor_aux["gate"].squeeze(-1)
+            delta_weight_l2 = actor_aux["delta_w_l2"]
+            delta_bias_l2 = actor_aux["delta_b_l2"]
+            delta_weight_norm = actor_aux["delta_w_norm"]
+            delta_bias_norm = actor_aux["delta_b_norm"]
+
+            distillation_nll = (
+                0.5 * torch.exp(-student_context_log_variance) * ((student_context_mean - target_teacher_context) ** 2)
+                + 0.5 * student_context_log_variance
+            )
+            distillation_loss = (distillation_nll.sum(dim=-1) * combined_mask).sum() / decision_denom
+
+            distillation_mse = (((student_context_mean - target_teacher_context) ** 2).mean(dim=-1) * combined_mask).sum() / decision_denom
+            hypernet_l2 = ((delta_weight_l2 + delta_bias_l2) * combined_mask).sum() / decision_denom
+
+            total_loss = (
+                policy_loss
+                + self.value_coef * value_loss
+                - self.entropy_coef * entropy_bonus
+                + self.distill_weight * distillation_loss
+                + self.hypernet_l2_coef * hypernet_l2
+            )
 
             self.optimizer.zero_grad()
             total_loss.backward()
@@ -895,6 +1220,7 @@ class PIMACV0(ParallelLearner):
                     max_norm=self.max_grad_norm,
                 )
             self.optimizer.step()
+            self._update_target_teacher()
 
             diagnostics = self._compute_update_diagnostics(
                 active_mask=active_mask,
@@ -906,6 +1232,12 @@ class PIMACV0(ParallelLearner):
                 new_log_probs=new_log_probabilities,
                 ratio=importance_ratio,
                 decision_denom=decision_denom,
+                ctx_logvar=student_context_log_variance,
+                gate=uncertainty_gate,
+                delta_w_norm=delta_weight_norm,
+                delta_b_norm=delta_bias_norm,
+                tokens=tokens,
+                teacher_context=teacher_context,
             )
 
             total_loss_scalar = float(total_loss.detach().item())
@@ -916,6 +1248,17 @@ class PIMACV0(ParallelLearner):
             mean_approx_kls.append(float(diagnostics["approx_kl"].detach().item()))
             mean_clip_fracs.append(float(diagnostics["clip_frac"].detach().item()))
             mean_explained_variances.append(float(diagnostics["explained_variance"].detach().item()))
+            mean_distill_losses.append(float(distillation_loss.detach().item()))
+            mean_distill_mses.append(float(distillation_mse.detach().item()))
+            mean_hyper_l2s.append(float(hypernet_l2.detach().item()))
+            mean_ctx_logvar_means.append(float(diagnostics["ctx_logvar_mean"].detach().item()))
+            mean_ctx_logvar_stds.append(float(diagnostics["ctx_logvar_std"].detach().item()))
+            mean_gate_means.append(float(diagnostics["gate_mean"].detach().item()))
+            mean_gate_stds.append(float(diagnostics["gate_std"].detach().item()))
+            mean_delta_w_norms.append(float(diagnostics["delta_w_norm_mean"].detach().item()))
+            mean_delta_b_norms.append(float(diagnostics["delta_b_norm_mean"].detach().item()))
+            mean_token_norms.append(float(diagnostics["token_norm_mean"].detach().item()))
+            mean_teacher_norms.append(float(diagnostics["teacher_ctx_norm_mean"].detach().item()))
             mean_active_decisions.append(float(diagnostics["active_decisions"]))
             mean_active_agents.append(float(diagnostics["active_agents_mean"].detach().item()))
             mean_grad_norms.append(float(grad_norm))
@@ -941,6 +1284,17 @@ class PIMACV0(ParallelLearner):
                 "approx_kl": float(np.mean(mean_approx_kls)),
                 "clip_frac": float(np.mean(mean_clip_fracs)),
                 "explained_variance": float(np.mean(mean_explained_variances)),
+                "distill_loss": float(np.mean(mean_distill_losses)),
+                "distill_mse": float(np.mean(mean_distill_mses)),
+                "hyper_l2": float(np.mean(mean_hyper_l2s)),
+                "ctx_logvar_mean": float(np.mean(mean_ctx_logvar_means)),
+                "ctx_logvar_std": float(np.mean(mean_ctx_logvar_stds)),
+                "gate_mean": float(np.mean(mean_gate_means)),
+                "gate_std": float(np.mean(mean_gate_stds)),
+                "delta_w_norm_mean": float(np.mean(mean_delta_w_norms)),
+                "delta_b_norm_mean": float(np.mean(mean_delta_b_norms)),
+                "token_norm_mean": float(np.mean(mean_token_norms)),
+                "teacher_ctx_norm_mean": float(np.mean(mean_teacher_norms)),
                 "active_decisions": float(np.mean(mean_active_decisions)),
                 "active_agents_mean": float(np.mean(mean_active_agents)),
             },
@@ -957,29 +1311,30 @@ class PIMACV0(ParallelLearner):
         return report
 
     def set_eval_mode(self) -> None:
-        """Switch actor and critic modules to evaluation mode without changing action sampling."""
+        """Switch actor/critic modules to evaluation mode without changing action sampling."""
         self._eval_mode = True
         self.actor_net.eval()
         self.critic.eval()
+        self.target_teacher.eval()
 
     def set_train_mode(self) -> None:
-        """Switch actor and critic modules to training mode."""
+        """Switch actor/critic modules to training mode; target teacher remains eval/frozen."""
         self._eval_mode = False
         self.actor_net.train()
         self.critic.train()
+        self.target_teacher.eval()
+
 
     def act(
         self,
         state: np.ndarray,
         agent_index: Optional[object] = None,
     ) -> int:
-        """Select one action for a specific agent stream."""
         if agent_index is None:
-            raise ValueError("PIMACV0.act requires agent_index. Prefer act_parallel for parallel environments.")
+            raise ValueError("PIMACV4.act requires agent_index. Prefer act_parallel for parallel environments.")
         return self._act_single(state=state, actor_key=agent_index)
 
     def act_parallel(self, obs_dict: dict[object, np.ndarray]) -> dict[object, int]:
-        """Compute one action per currently present parallel-agent observation."""
         return {
             agent_id: self._act_single(state=obs_dict[agent_id], actor_key=agent_id)
             for agent_id in _sorted_agent_ids(obs_dict.keys())
@@ -1002,6 +1357,7 @@ class PIMACV0(ParallelLearner):
         return {
             "actor_state_dict": self.actor_net.state_dict(),
             "critic_state_dict": self.critic.state_dict(),
+            "target_teacher_state_dict": self.target_teacher.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "update_history": [report.to_flat_dict() for report in self._update_reports],
         }
@@ -1009,6 +1365,9 @@ class PIMACV0(ParallelLearner):
     def _load_checkpoint_state(self, checkpoint_state: dict) -> None:
         self.actor_net.load_state_dict(checkpoint_state["actor_state_dict"])
         self.critic.load_state_dict(checkpoint_state["critic_state_dict"])
+        target_teacher_state = checkpoint_state.get("target_teacher_state_dict")
+        if target_teacher_state is not None:
+            self.target_teacher.load_state_dict(target_teacher_state)
         optimizer_state = checkpoint_state.get("optimizer_state_dict")
         if optimizer_state is not None:
             self.optimizer.load_state_dict(optimizer_state)
