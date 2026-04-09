@@ -4,10 +4,9 @@ set -euo pipefail
 SUITE_ID="${1:?suite id is required}"
 PARALLEL_JOBS="${2:-1}"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+REPO_ROOT="${SLURM_SUBMIT_DIR:-${PWD}}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
-MANIFEST_PATH="${MANIFEST_PATH:-optuna/study_library/rware_full.json}"
+MANIFEST_PATH="${MANIFEST_PATH:-${REPO_ROOT}/optuna/study_library/rware_full.json}"
 
 echo "Job started on $(hostname)"
 echo "Repository: ${REPO_ROOT}"
@@ -17,6 +16,12 @@ date
 
 if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
     echo "Python executable not found: ${PYTHON_BIN}" >&2
+    exit 1
+fi
+
+if [ ! -f "${REPO_ROOT}/requirements.txt" ]; then
+    echo "requirements.txt not found under ${REPO_ROOT}" >&2
+    echo "Submit the job from the repo root or keep sbatch --chdir pointed at the repo root." >&2
     exit 1
 fi
 
