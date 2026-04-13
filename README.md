@@ -92,10 +92,19 @@ Run one study manifest:
 ```bash
 venv/bin/python optuna/study.py \
   --manifest optuna/study_library/hard_full.json \
-  --suite-id hard_full_01
+  --suite-id hard_full_01 \
+  --parallel-jobs 3
 ```
 
 `optuna/study_library/base.json` is a non-runnable template. Copy it first, then trim it down.
+
+Active sweep semantics:
+
+- `parallel-jobs` means max concurrent algorithm studies inside one manifest DAG.
+- Trials inside each algorithm study run sequentially.
+- Active sweep manifests set `eval_every_episodes=0`.
+- In that mode, the sweep objective is one held-out final-checkpoint evaluation only.
+- The held-out sweep split still uses the task `test_*` fields for simplicity.
 
 Run a library of manifests:
 
@@ -105,13 +114,15 @@ venv/bin/python optuna/full_sweep.py \
   --library optuna/study_library/core.json
 ```
 
-Compare best checkpoints from a suite:
+Compare the selected checkpoints from a suite:
 
 ```bash
 venv/bin/python optuna/analyze.py compare \
   --suite-id hard_full_01 \
   --task simple_spread_dynamic_hard
 ```
+
+When a sweep disables validation, only `final_checkpoint.pt` is written and the analysis tools use that directly.
 
 Other analysis subcommands are:
 
