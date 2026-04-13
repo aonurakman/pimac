@@ -36,32 +36,18 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 
-DEFAULT_DASHBOARD_METRIC_KEY_ORDER: tuple[str, ...] = (
-    "policy_loss",
-    "value_loss",
-    "entropy",
-    "total_loss",
-    "loss",
-    "approx_kl",
-    "clip_frac",
-    "explained_variance",
-    "distill_loss",
-    "distill_mse",
-    "ctx_logvar_mean",
-    "ctx_logvar_std",
-    "gate_mean",
-    "gate_std",
-    "hyper_l2",
-    "delta_w_norm_mean",
-    "delta_b_norm_mean",
-    "token_norm_mean",
-    "teacher_ctx_norm_mean",
-    "active_decisions",
-    "active_agents_mean",
-    "td_loss",
-    "q_mean",
-    "target_mean",
-    "td_error_abs",
+DASHBOARD_METRIC_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Policy optimization", ("policy_loss", "value_loss", "entropy")),
+    ("PPO stability", ("approx_kl", "clip_frac", "explained_variance")),
+    ("Q-learning", ("td_loss", "td_error_abs", "exploration_temperature")),
+    ("Q scale", ("q_mean", "target_mean")),
+    ("Teacher grounding", ("distill_loss", "distill_mse", "counterfactual_loss")),
+    ("Context uncertainty", ("ctx_logvar_mean", "ctx_logvar_std", "gate_mean", "gate_std")),
+    ("Policy adaptation", ("hyper_l2", "delta_w_norm_mean", "delta_b_norm_mean")),
+)
+
+DEFAULT_DASHBOARD_METRIC_KEY_ORDER: tuple[str, ...] = tuple(
+    metric_key for _, metric_keys in DASHBOARD_METRIC_GROUPS for metric_key in metric_keys
 )
 
 
@@ -186,15 +172,40 @@ def save_update_history_csv(path: str | Path, update_history: Sequence[UpdateRep
 def ordered_scalar_metric_keys(metric_history: Sequence[dict[str, float]] | None) -> list[str]:
     if not metric_history:
         return []
-    scalar_keys = {
-        str(key)
-        for entry in metric_history
-        for key, value in entry.items()
-        if isinstance(value, (int, float, np.integer, np.floating))
-    }
-    ordered = [key for key in DEFAULT_DASHBOARD_METRIC_KEY_ORDER if key in scalar_keys]
-    ordered.extend(sorted(key for key in scalar_keys if key not in ordered))
-    return ordered
+    scalar_keys: set[str] = set()
+    for key in DEFAULT_DASHBOARD_METRIC_KEY_ORDER:
+        values = np.asarray([float(entry.get(key, np.nan)) for entry in metric_history], dtype=np.float32)
+        if np.isfinite(values).any():
+            scalar_keys.add(key)
+    return [key for key in DEFAULT_DASHBOARD_METRIC_KEY_ORDER if key in scalar_keys]
+
+
+def grouped_dashboard_metric_keys(metric_history: Sequence[dict[str, float]] | None) -> list[tuple[str, list[str]]]:
+    if not metric_history:
+        return []
+    scalar_keys = set(ordered_scalar_metric_keys(metric_history))
+    grouped: list[tuple[str, list[str]]] = []
+    for title, metric_keys in DASHBOARD_METRIC_GROUPS:
+        present = [key for key in metric_keys if key in scalar_keys]
+        if present:
+            grouped.append((title, present))
+    return grouped
+
+
+def plot_dashboard_metric_group(
+    axis,
+    metric_history: Sequence[dict[str, float]],
+    *,
+    title: str,
+    metric_keys: Sequence[str],
+) -> None:
+    for metric_key in metric_keys:
+        values = np.asarray([float(row.get(metric_key, np.nan)) for row in metric_history], dtype=np.float32)
+        if np.isfinite(values).any():
+            axis.plot(np.arange(1, values.size + 1), values, linewidth=1.2, alpha=0.90, label=metric_key)
+    axis.set_ylabel(title)
+    axis.grid(True, alpha=0.3)
+    axis.legend(ncol=2, fontsize=8)
 
 
 def plot_basic_curves(
@@ -213,9 +224,9 @@ def plot_basic_curves(
     eval_x_np = np.asarray(eval_x or [], dtype=np.int64)
     eval_rewards_np = np.asarray(eval_rewards or [], dtype=np.float32)
     history_rows = list(update_history or [])
-    metric_keys = ordered_scalar_metric_keys(history_rows)
+    metric_groups = grouped_dashboard_metric_keys(history_rows)
 
-    fig_rows = 3 if metric_keys else 2
+    fig_rows = 2 + len(metric_groups) if metric_groups else 2
     fig, axes = plt.subplots(fig_rows, 1, figsize=(12, 4 * fig_rows))
     if fig_rows == 1:
         axes = [axes]
@@ -241,15 +252,10 @@ def plot_basic_curves(
     axes[1].grid(True, alpha=0.3)
     axes[1].legend()
 
-    if metric_keys:
-        for metric_key in metric_keys:
-            values = np.asarray([float(row.get(metric_key, np.nan)) for row in history_rows], dtype=np.float32)
-            if np.isfinite(values).any():
-                axes[2].plot(np.arange(1, values.size + 1), values, label=metric_key)
-        axes[2].set_xlabel("Update")
-        axes[2].set_ylabel("Metric")
-        axes[2].grid(True, alpha=0.3)
-        axes[2].legend(ncol=2, fontsize=8)
+    if metric_groups:
+        for axis, (title, metric_keys) in zip(axes[2:], metric_groups):
+            plot_dashboard_metric_group(axis, history_rows, title=title, metric_keys=metric_keys)
+        axes[-1].set_xlabel("Update")
     else:
         axes[1].set_xlabel("Episode")
 
