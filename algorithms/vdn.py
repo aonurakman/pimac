@@ -269,14 +269,16 @@ class VDN(ParallelLearner):
             | set(transition.next_obs_dict.keys())
             | done_agent_ids
         )
-        obs_batch = np.zeros((len(agent_ids), self.obs_size), dtype=np.float32)
-        next_obs_batch = np.zeros((len(agent_ids), self.obs_size), dtype=np.float32)
-        actions_batch = np.zeros(len(agent_ids), dtype=np.int64)
-        rewards_batch = np.zeros(len(agent_ids), dtype=np.float32)
-        active_mask = np.zeros(len(agent_ids), dtype=np.float32)
-        next_active_mask = np.zeros(len(agent_ids), dtype=np.float32)
+        obs_batch = np.zeros((self.max_agents, self.obs_size), dtype=np.float32)
+        next_obs_batch = np.zeros((self.max_agents, self.obs_size), dtype=np.float32)
+        actions_batch = np.zeros(self.max_agents, dtype=np.int64)
+        rewards_batch = np.zeros(self.max_agents, dtype=np.float32)
+        active_mask = np.zeros(self.max_agents, dtype=np.float32)
+        next_active_mask = np.zeros(self.max_agents, dtype=np.float32)
 
         for agent_index, agent_id in enumerate(agent_ids):
+            if agent_index >= self.max_agents:
+                break
             if agent_id in transition.obs_dict:
                 obs_batch[agent_index] = np.asarray(transition.obs_dict[agent_id], dtype=np.float32)
             if agent_id in transition.next_obs_dict:
