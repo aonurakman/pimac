@@ -3,296 +3,8 @@
   "seed": 42,
   "algorithms": [
     {
-      "name": "mappo",
-      "trials": 20,
-      "search": {
-        "actor_arch": {
-          "type": "categorical",
-          "values": [
-            {
-              "num_hidden": 1,
-              "widths": [
-                64,
-                64
-              ]
-            },
-            {
-              "num_hidden": 2,
-              "widths": [
-                64,
-                128,
-                64
-              ]
-            },
-            {
-              "num_hidden": 2,
-              "widths": [
-                128,
-                128,
-                128
-              ]
-            },
-            {
-              "num_hidden": 2,
-              "widths": [
-                128,
-                256,
-                128
-              ]
-            }
-          ],
-          "merge": true
-        },
-        "lr": {
-          "type": "float",
-          "low": 5e-05,
-          "high": 0.001,
-          "log": true
-        },
-        "batch_size": {
-          "type": "categorical",
-          "values": [
-            32,
-            64,
-            128
-          ]
-        },
-        "num_epochs": {
-          "type": "categorical",
-          "values": [
-            2,
-            4,
-            6,
-            8
-          ]
-        },
-        "rnn_hidden_dim": {
-          "type": "categorical",
-          "values": [
-            64,
-            128
-          ]
-        },
-        "clip_eps": {
-          "type": "categorical",
-          "values": [
-            0.1,
-            0.15,
-            0.2,
-            0.25
-          ]
-        },
-        "gamma": {
-          "type": "categorical",
-          "values": [
-            0.97,
-            0.99
-          ]
-        },
-        "gae_lambda": {
-          "type": "categorical",
-          "values": [
-            0.93,
-            0.95,
-            0.97
-          ]
-        },
-        "entropy_coef": {
-          "type": "float",
-          "low": 0.001,
-          "high": 0.05,
-          "log": true
-        },
-        "value_coef": {
-          "type": "categorical",
-          "values": [
-            0.25,
-            0.5,
-            1.0
-          ]
-        },
-        "max_grad_norm": {
-          "type": "categorical",
-          "values": [
-            0.5,
-            1.0,
-            2.0,
-            5.0,
-            10.0
-          ]
-        },
-        "critic_hidden_sizes": {
-          "type": "categorical",
-          "values": [
-            [
-              64,
-              64
-            ],
-            [
-              128,
-              128
-            ],
-            [
-              64,
-              64,
-              64
-            ],
-            [
-              128,
-              128,
-              128
-            ],
-            [
-              256,
-              256
-            ]
-          ]
-        }
-      }
-    },
-    {
-      "name": "iql",
-      "trials": 12,
-      "search": {
-        "q_arch": {
-          "type": "categorical",
-          "values": [
-            {
-              "num_hidden": 1,
-              "widths": [
-                64,
-                64
-              ]
-            },
-            {
-              "num_hidden": 2,
-              "widths": [
-                64,
-                128,
-                64
-              ]
-            },
-            {
-              "num_hidden": 2,
-              "widths": [
-                128,
-                128,
-                128
-              ]
-            }
-          ],
-          "merge": true
-        },
-        "lr": {
-          "type": "float",
-          "low": 0.0001,
-          "high": 0.002,
-          "log": true
-        },
-        "batch_size": {
-          "type": "categorical",
-          "values": [
-            64,
-            128
-          ]
-        },
-        "num_epochs": {
-          "type": "categorical",
-          "values": [
-            1,
-            2
-          ]
-        },
-        "rnn_hidden_dim": {
-          "type": "categorical",
-          "values": [
-            0,
-            64,
-            128
-          ]
-        },
-        "seq_len": {
-          "type": "categorical",
-          "values": [
-            4,
-            8
-          ]
-        },
-        "gamma": {
-          "type": "categorical",
-          "values": [
-            0.97,
-            0.99
-          ]
-        },
-        "target_update_every": {
-          "type": "categorical",
-          "values": [
-            200,
-            400
-          ]
-        },
-        "double_dqn": {
-          "type": "categorical",
-          "values": [
-            true,
-            false
-          ]
-        },
-        "tau": {
-          "type": "categorical",
-          "values": [
-            0.05,
-            0.1,
-            0.5,
-            1.0
-          ]
-        },
-        "temp_init": {
-          "type": "categorical",
-          "values": [
-            0.5,
-            1.0,
-            1.5
-          ]
-        },
-        "temp_decay": {
-          "type": "categorical",
-          "values": [
-            0.995,
-            0.997,
-            0.999,
-            0.9995
-          ]
-        },
-        "temp_min": {
-          "type": "categorical",
-          "values": [
-            0.01,
-            0.05,
-            0.1
-          ]
-        },
-        "learn_every_steps": {
-          "type": "categorical",
-          "values": [
-            4,
-            8
-          ]
-        },
-        "max_grad_norm": {
-          "type": "categorical",
-          "values": [
-            5.0,
-            10.0,
-            20.0
-          ]
-        }
-      }
-    },
-    {
       "name": "ippo",
-      "trials": 12,
+      "trials": 16,
       "search": {
         "actor_arch": {
           "type": "categorical",
@@ -410,301 +122,62 @@
       }
     },
     {
-      "name": "qmix",
-      "trials": 12,
+      "name": "mappo",
+      "trials": 24,
       "search": {
-        "qmix_arch": {
-          "type": "categorical",
-          "values": [
-            {
-              "num_hidden": 2,
-              "widths": [
-                64,
-                128,
-                64
-              ]
-            },
-            {
-              "num_hidden": 2,
-              "widths": [
-                128,
-                128,
-                128
-              ]
-            }
-          ],
-          "merge": true
-        },
-        "lr": {
-          "type": "float",
-          "low": 0.0001,
-          "high": 0.001,
-          "log": true
-        },
-        "batch_size": {
-          "type": "categorical",
-          "values": [
-            32,
-            64
-          ]
-        },
-        "num_epochs": {
-          "type": "categorical",
-          "values": [
-            1,
-            2
-          ]
-        },
-        "rnn_hidden_dim": {
-          "type": "constant",
-          "value": 64
-        },
-        "gamma": {
-          "type": "categorical",
-          "values": [
-            0.97,
-            0.99
-          ]
-        },
-        "target_update_every": {
-          "type": "categorical",
-          "values": [
-            200,
-            400
-          ]
-        },
-        "learn_every_steps": {
-          "type": "categorical",
-          "values": [
-            8,
-            16
-          ]
-        },
-        "double_q": {
-          "type": "categorical",
-          "values": [
-            true,
-            false
-          ]
-        },
-        "tau": {
-          "type": "categorical",
-          "values": [
-            0.1,
-            0.5,
-            1.0
-          ]
-        },
-        "temp_init": {
-          "type": "categorical",
-          "values": [
-            0.5,
-            1.0,
-            1.5
-          ]
-        },
-        "temp_decay": {
-          "type": "categorical",
-          "values": [
-            0.997,
-            0.999,
-            0.9995
-          ]
-        },
-        "temp_min": {
-          "type": "categorical",
-          "values": [
-            0.01,
-            0.05,
-            0.1
-          ]
-        },
-        "max_grad_norm": {
-          "type": "categorical",
-          "values": [
-            5.0,
-            10.0
-          ]
-        },
-        "mixing_embed_dim": {
-          "type": "categorical",
-          "values": [
-            32,
-            64,
-            128
-          ]
-        },
-        "mixing_widths": {
+        "critic_hidden_sizes": {
           "type": "categorical",
           "values": [
             [
+              64,
               64
-            ],
-            [
-              128
             ],
             [
               128,
               128
+            ],
+            [
+              64,
+              64,
+              64
+            ],
+            [
+              128,
+              128,
+              128
+            ],
+            [
+              256,
+              256
             ]
-          ],
-          "length_target": "mixing_num_hidden"
-        },
-        "mixing_weight_clip": {
-          "type": "categorical",
-          "values": [
-            null,
-            5.0,
-            10.0
           ]
-        },
-        "q_tot_clip": {
-          "type": "categorical",
-          "values": [
-            null,
-            20.0,
-            50.0
-          ]
-        },
-        "share_parameters": {
-          "type": "constant",
-          "value": true
         }
-      }
-    },
-    {
-      "name": "vdn",
-      "trials": 12,
-      "search": {
-        "vdn_arch": {
-          "type": "categorical",
-          "values": [
-            {
-              "num_hidden": 2,
-              "widths": [
-                64,
-                128,
-                64
-              ]
-            },
-            {
-              "num_hidden": 2,
-              "widths": [
-                128,
-                128,
-                128
-              ]
-            }
+      },
+      "inherit": [
+        {
+          "from": "ippo",
+          "keys": [
+            "lr",
+            "batch_size",
+            "update_every_episodes",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm"
           ],
-          "merge": true
-        },
-        "lr": {
-          "type": "float",
-          "low": 0.0001,
-          "high": 0.001,
-          "log": true
-        },
-        "batch_size": {
-          "type": "categorical",
-          "values": [
-            32,
-            64
-          ]
-        },
-        "num_epochs": {
-          "type": "categorical",
-          "values": [
-            1,
-            2
-          ]
-        },
-        "rnn_hidden_dim": {
-          "type": "constant",
-          "value": 64
-        },
-        "gamma": {
-          "type": "categorical",
-          "values": [
-            0.97,
-            0.99
-          ]
-        },
-        "target_update_every": {
-          "type": "categorical",
-          "values": [
-            200,
-            400
-          ]
-        },
-        "learn_every_steps": {
-          "type": "categorical",
-          "values": [
-            8,
-            16
-          ]
-        },
-        "double_q": {
-          "type": "categorical",
-          "values": [
-            true,
-            false
-          ]
-        },
-        "tau": {
-          "type": "categorical",
-          "values": [
-            0.1,
-            0.5,
-            1.0
-          ]
-        },
-        "temp_init": {
-          "type": "categorical",
-          "values": [
-            0.5,
-            1.0,
-            1.5
-          ]
-        },
-        "temp_decay": {
-          "type": "categorical",
-          "values": [
-            0.997,
-            0.999,
-            0.9995
-          ]
-        },
-        "temp_min": {
-          "type": "categorical",
-          "values": [
-            0.01,
-            0.05,
-            0.1
-          ]
-        },
-        "use_huber_loss": {
-          "type": "categorical",
-          "values": [
-            true,
-            false
-          ]
-        },
-        "max_grad_norm": {
-          "type": "categorical",
-          "values": [
-            5.0,
-            10.0
-          ]
-        },
-        "share_parameters": {
-          "type": "constant",
-          "value": true
+          "required": true
         }
-      }
+      ]
     },
     {
       "name": "pimac_v0",
-      "trials": 10,
+      "trials": 12,
       "search": {
         "critic_hidden_sizes": {
           "type": "categorical",
@@ -763,6 +236,7 @@
           "keys": [
             "lr",
             "batch_size",
+            "update_every_episodes",
             "num_epochs",
             "num_hidden",
             "widths",
@@ -773,13 +247,14 @@
             "entropy_coef",
             "value_coef",
             "max_grad_norm"
-          ]
+          ],
+          "required": true
         }
       ]
     },
     {
       "name": "pimac_v1",
-      "trials": 12,
+      "trials": 16,
       "search": {
         "num_tokens": {
           "type": "categorical",
@@ -794,56 +269,15 @@
           "high": 0.2,
           "log": true
         },
-        "teacher_ema_tau": {
+        "counterfactual_weight": {
           "type": "categorical",
           "values": [
             0.0,
-            0.0025,
-            0.005,
             0.01,
             0.02,
-            0.05
+            0.05,
+            0.1
           ]
-        }
-      },
-      "inherit": [
-        {
-          "from": "mappo",
-          "keys": [
-            "lr",
-            "batch_size",
-            "num_epochs",
-            "num_hidden",
-            "widths",
-            "rnn_hidden_dim",
-            "clip_eps",
-            "gamma",
-            "gae_lambda",
-            "entropy_coef",
-            "value_coef",
-            "max_grad_norm"
-          ]
-        },
-        {
-          "from": "pimac_v0",
-          "keys": [
-            "critic_hidden_sizes",
-            "set_embed_dim",
-            "set_encoder_hidden_sizes",
-            "include_team_size_feature"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "pimac_v2",
-      "trials": 12,
-      "search": {
-        "distill_weight": {
-          "type": "float",
-          "low": 0.005,
-          "high": 0.2,
-          "log": true
         },
         "teacher_ema_tau": {
           "type": "categorical",
@@ -880,10 +314,11 @@
       },
       "inherit": [
         {
-          "from": "mappo",
+          "from": "pimac_v0",
           "keys": [
             "lr",
             "batch_size",
+            "update_every_episodes",
             "num_epochs",
             "num_hidden",
             "widths",
@@ -893,30 +328,115 @@
             "gae_lambda",
             "entropy_coef",
             "value_coef",
-            "max_grad_norm"
-          ]
-        },
-        {
-          "from": "pimac_v1",
-          "keys": [
+            "max_grad_norm",
             "critic_hidden_sizes",
             "set_embed_dim",
             "set_encoder_hidden_sizes",
-            "include_team_size_feature",
-            "num_tokens"
-          ]
+            "include_team_size_feature"
+          ],
+          "required": true
         }
       ]
     },
     {
-      "name": "pimac_v3",
-      "trials": 12,
+      "name": "pimac_v2",
+      "trials": 16,
       "search": {
         "distill_weight": {
           "type": "float",
           "low": 0.005,
           "high": 0.2,
           "log": true
+        },
+        "counterfactual_weight": {
+          "type": "categorical",
+          "values": [
+            0.0,
+            0.01,
+            0.02,
+            0.05,
+            0.1
+          ]
+        },
+        "teacher_ema_tau": {
+          "type": "categorical",
+          "values": [
+            0.0,
+            0.0025,
+            0.005,
+            0.01,
+            0.02,
+            0.05
+          ]
+        },
+        "ctx_logvar_bounds": {
+          "type": "categorical",
+          "values": [
+            [
+              -8.0,
+              2.0
+            ],
+            [
+              -6.0,
+              4.0
+            ],
+            [
+              -4.0,
+              4.0
+            ]
+          ],
+          "targets": [
+            "ctx_logvar_min",
+            "ctx_logvar_max"
+          ]
+        }
+      },
+      "inherit": [
+        {
+          "from": "pimac_v1",
+          "keys": [
+            "lr",
+            "batch_size",
+            "update_every_episodes",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm",
+            "critic_hidden_sizes",
+            "set_embed_dim",
+            "set_encoder_hidden_sizes",
+            "include_team_size_feature",
+            "num_tokens"
+          ],
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "pimac_v3",
+      "trials": 16,
+      "search": {
+        "distill_weight": {
+          "type": "float",
+          "low": 0.005,
+          "high": 0.2,
+          "log": true
+        },
+        "counterfactual_weight": {
+          "type": "categorical",
+          "values": [
+            0.0,
+            0.01,
+            0.02,
+            0.05,
+            0.1
+          ]
         },
         "teacher_ema_tau": {
           "type": "categorical",
@@ -968,10 +488,11 @@
       },
       "inherit": [
         {
-          "from": "mappo",
+          "from": "pimac_v2",
           "keys": [
             "lr",
             "batch_size",
+            "update_every_episodes",
             "num_epochs",
             "num_hidden",
             "widths",
@@ -981,12 +502,7 @@
             "gae_lambda",
             "entropy_coef",
             "value_coef",
-            "max_grad_norm"
-          ]
-        },
-        {
-          "from": "pimac_v2",
-          "keys": [
+            "max_grad_norm",
             "critic_hidden_sizes",
             "set_embed_dim",
             "set_encoder_hidden_sizes",
@@ -994,19 +510,30 @@
             "num_tokens",
             "ctx_logvar_min",
             "ctx_logvar_max"
-          ]
+          ],
+          "required": true
         }
       ]
     },
     {
       "name": "pimac_v4",
-      "trials": 12,
+      "trials": 16,
       "search": {
         "distill_weight": {
           "type": "float",
           "low": 0.005,
           "high": 0.2,
           "log": true
+        },
+        "counterfactual_weight": {
+          "type": "categorical",
+          "values": [
+            0.0,
+            0.01,
+            0.02,
+            0.05,
+            0.1
+          ]
         },
         "teacher_ema_tau": {
           "type": "categorical",
@@ -1062,6 +589,7 @@
           "keys": [
             "lr",
             "batch_size",
+            "update_every_episodes",
             "num_epochs",
             "num_hidden",
             "widths",
@@ -1079,9 +607,280 @@
             "num_tokens",
             "ctx_logvar_min",
             "ctx_logvar_max"
+          ],
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "iql",
+      "trials": 16,
+      "search": {
+        "q_arch": {
+          "type": "categorical",
+          "values": [
+            {
+              "num_hidden": 1,
+              "widths": [
+                64,
+                64
+              ]
+            },
+            {
+              "num_hidden": 2,
+              "widths": [
+                64,
+                128,
+                64
+              ]
+            },
+            {
+              "num_hidden": 2,
+              "widths": [
+                128,
+                128,
+                128
+              ]
+            }
+          ],
+          "merge": true
+        },
+        "lr": {
+          "type": "float",
+          "low": 0.0001,
+          "high": 0.002,
+          "log": true
+        },
+        "batch_size": {
+          "type": "categorical",
+          "values": [
+            64,
+            128
           ]
+        },
+        "num_epochs": {
+          "type": "categorical",
+          "values": [
+            1,
+            2
+          ]
+        },
+        "rnn_hidden_dim": {
+          "type": "categorical",
+          "values": [
+            0,
+            64,
+            128
+          ]
+        },
+        "seq_len": {
+          "type": "categorical",
+          "values": [
+            4,
+            8
+          ]
+        },
+        "gamma": {
+          "type": "categorical",
+          "values": [
+            0.97,
+            0.99
+          ]
+        },
+        "target_update_every": {
+          "type": "categorical",
+          "values": [
+            200,
+            400
+          ]
+        },
+        "double_dqn": {
+          "type": "categorical",
+          "values": [
+            true,
+            false
+          ]
+        },
+        "tau": {
+          "type": "categorical",
+          "values": [
+            0.05,
+            0.1,
+            0.5,
+            1.0
+          ]
+        },
+        "temp_init": {
+          "type": "categorical",
+          "values": [
+            0.5,
+            1.0,
+            1.5
+          ]
+        },
+        "temp_min": {
+          "type": "categorical",
+          "values": [
+            0.01,
+            0.05,
+            0.1
+          ]
+        },
+        "learn_every_steps": {
+          "type": "categorical",
+          "values": [
+            4,
+            8
+          ]
+        },
+        "max_grad_norm": {
+          "type": "categorical",
+          "values": [
+            5.0,
+            10.0,
+            20.0
+          ]
+        },
+        "temp_gap_fraction_at_budget": {
+          "type": "categorical",
+          "values": [
+            0.01,
+            0.05,
+            0.1,
+            0.2
+          ]
+        }
+      }
+    },
+    {
+      "name": "vdn",
+      "trials": 16,
+      "search": {
+        "double_q": {
+          "type": "categorical",
+          "values": [
+            true,
+            false
+          ]
+        },
+        "use_huber_loss": {
+          "type": "categorical",
+          "values": [
+            true,
+            false
+          ]
+        },
+        "share_parameters": {
+          "type": "constant",
+          "value": true
+        }
+      },
+      "inherit": [
+        {
+          "from": "iql",
+          "keys": [
+            "lr",
+            "batch_size",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "gamma",
+            "target_update_every",
+            "tau",
+            "temp_init",
+            "temp_decay",
+            "temp_min",
+            "learn_every_steps",
+            "max_grad_norm"
+          ],
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "qmix",
+      "trials": 16,
+      "search": {
+        "double_q": {
+          "type": "categorical",
+          "values": [
+            true,
+            false
+          ]
+        },
+        "mixing_embed_dim": {
+          "type": "categorical",
+          "values": [
+            32,
+            64,
+            128
+          ]
+        },
+        "mixing_widths": {
+          "type": "categorical",
+          "values": [
+            [
+              64
+            ],
+            [
+              128
+            ],
+            [
+              128,
+              128
+            ]
+          ],
+          "length_target": "mixing_num_hidden"
+        },
+        "mixing_weight_clip": {
+          "type": "categorical",
+          "values": [
+            null,
+            5.0,
+            10.0
+          ]
+        },
+        "q_tot_clip": {
+          "type": "categorical",
+          "values": [
+            null,
+            20.0,
+            50.0
+          ]
+        },
+        "share_parameters": {
+          "type": "constant",
+          "value": true
+        }
+      },
+      "inherit": [
+        {
+          "from": "iql",
+          "keys": [
+            "lr",
+            "batch_size",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "gamma",
+            "target_update_every",
+            "tau",
+            "temp_init",
+            "temp_decay",
+            "temp_min",
+            "learn_every_steps",
+            "max_grad_norm"
+          ],
+          "required": true
         }
       ]
     }
-  ]
+  ],
+  "task_overrides": {
+    "episodes": 2000,
+    "eval_every_episodes": 0,
+    "test_rollouts": 10
+  }
 }

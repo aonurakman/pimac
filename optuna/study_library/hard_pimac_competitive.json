@@ -3,8 +3,8 @@
   "seed": 42,
   "algorithms": [
     {
-      "name": "mappo",
-      "trials": 1,
+      "name": "ippo",
+      "trials": 6,
       "search": {
         "actor_arch": {
           "type": "categorical",
@@ -31,21 +31,13 @@
                 128,
                 128
               ]
-            },
-            {
-              "num_hidden": 2,
-              "widths": [
-                128,
-                256,
-                128
-              ]
             }
           ],
           "merge": true
         },
         "lr": {
           "type": "float",
-          "low": 5e-05,
+          "low": 0.0001,
           "high": 0.001,
           "log": true
         },
@@ -57,13 +49,20 @@
             128
           ]
         },
+        "update_every_episodes": {
+          "type": "categorical",
+          "values": [
+            4,
+            8,
+            16
+          ]
+        },
         "num_epochs": {
           "type": "categorical",
           "values": [
             2,
             4,
-            6,
-            8
+            6
           ]
         },
         "rnn_hidden_dim": {
@@ -117,10 +116,15 @@
             0.5,
             1.0,
             2.0,
-            5.0,
-            10.0
+            5.0
           ]
-        },
+        }
+      }
+    },
+    {
+      "name": "mappo",
+      "trials": 6,
+      "search": {
         "critic_hidden_sizes": {
           "type": "categorical",
           "values": [
@@ -148,11 +152,32 @@
             ]
           ]
         }
-      }
+      },
+      "inherit": [
+        {
+          "from": "ippo",
+          "keys": [
+            "lr",
+            "batch_size",
+            "update_every_episodes",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm"
+          ],
+          "required": true
+        }
+      ]
     },
     {
       "name": "pimac_v0",
-      "trials": 10,
+      "trials": 16,
       "search": {
         "critic_hidden_sizes": {
           "type": "categorical",
@@ -214,6 +239,7 @@
           "keys": [
             "lr",
             "batch_size",
+            "update_every_episodes",
             "num_epochs",
             "num_hidden",
             "widths",
@@ -224,13 +250,14 @@
             "entropy_coef",
             "value_coef",
             "max_grad_norm"
-          ]
+          ],
+          "required": true
         }
       ]
     },
     {
       "name": "pimac_v1",
-      "trials": 10,
+      "trials": 16,
       "search": {
         "num_tokens": {
           "type": "categorical",
@@ -246,6 +273,16 @@
           "high": 0.001,
           "log": true
         },
+        "counterfactual_weight": {
+          "type": "categorical",
+          "values": [
+            0.0,
+            0.01,
+            0.02,
+            0.05,
+            0.1
+          ]
+        },
         "teacher_ema_tau": {
           "type": "categorical",
           "values": [
@@ -258,16 +295,16 @@
           "type": "categorical",
           "values": [
             [
-              -1.5,
-              1.0
-            ],
-            [
-              -1.0,
+              -0.5,
               1.0
             ],
             [
               -0.5,
-              1.0
+              0.75
+            ],
+            [
+              -0.5,
+              0.5
             ],
             [
               -0.25,
@@ -290,10 +327,11 @@
       },
       "inherit": [
         {
-          "from": "mappo",
+          "from": "pimac_v0",
           "keys": [
             "lr",
             "batch_size",
+            "update_every_episodes",
             "num_epochs",
             "num_hidden",
             "widths",
@@ -303,29 +341,35 @@
             "gae_lambda",
             "entropy_coef",
             "value_coef",
-            "max_grad_norm"
-          ]
-        },
-        {
-          "from": "pimac_v0",
-          "keys": [
+            "max_grad_norm",
             "critic_hidden_sizes",
             "set_embed_dim",
             "set_encoder_hidden_sizes",
             "include_team_size_feature"
-          ]
+          ],
+          "required": true
         }
       ]
     },
     {
       "name": "pimac_v2",
-      "trials": 10,
+      "trials": 16,
       "search": {
         "distill_weight": {
           "type": "float",
           "low": 0.0004,
           "high": 0.003,
           "log": true
+        },
+        "counterfactual_weight": {
+          "type": "categorical",
+          "values": [
+            0.0,
+            0.01,
+            0.02,
+            0.05,
+            0.1
+          ]
         },
         "teacher_ema_tau": {
           "type": "categorical",
@@ -372,10 +416,11 @@
       },
       "inherit": [
         {
-          "from": "mappo",
+          "from": "pimac_v1",
           "keys": [
             "lr",
             "batch_size",
+            "update_every_episodes",
             "num_epochs",
             "num_hidden",
             "widths",
@@ -385,30 +430,36 @@
             "gae_lambda",
             "entropy_coef",
             "value_coef",
-            "max_grad_norm"
-          ]
-        },
-        {
-          "from": "pimac_v1",
-          "keys": [
+            "max_grad_norm",
             "critic_hidden_sizes",
             "set_embed_dim",
             "set_encoder_hidden_sizes",
             "include_team_size_feature",
             "num_tokens"
-          ]
+          ],
+          "required": true
         }
       ]
     },
     {
       "name": "pimac_v3",
-      "trials": 10,
+      "trials": 16,
       "search": {
         "distill_weight": {
           "type": "float",
           "low": 8e-05,
           "high": 0.0008,
           "log": true
+        },
+        "counterfactual_weight": {
+          "type": "categorical",
+          "values": [
+            0.0,
+            0.01,
+            0.02,
+            0.05,
+            0.1
+          ]
         },
         "teacher_ema_tau": {
           "type": "categorical",
@@ -464,10 +515,11 @@
       },
       "inherit": [
         {
-          "from": "mappo",
+          "from": "pimac_v2",
           "keys": [
             "lr",
             "batch_size",
+            "update_every_episodes",
             "num_epochs",
             "num_hidden",
             "widths",
@@ -477,12 +529,7 @@
             "gae_lambda",
             "entropy_coef",
             "value_coef",
-            "max_grad_norm"
-          ]
-        },
-        {
-          "from": "pimac_v2",
-          "keys": [
+            "max_grad_norm",
             "critic_hidden_sizes",
             "set_embed_dim",
             "set_encoder_hidden_sizes",
@@ -490,19 +537,30 @@
             "num_tokens",
             "ctx_logvar_min",
             "ctx_logvar_max"
-          ]
+          ],
+          "required": true
         }
       ]
     },
     {
       "name": "pimac_v4",
-      "trials": 10,
+      "trials": 16,
       "search": {
         "distill_weight": {
           "type": "float",
           "low": 8e-05,
           "high": 0.0008,
           "log": true
+        },
+        "counterfactual_weight": {
+          "type": "categorical",
+          "values": [
+            0.0,
+            0.01,
+            0.02,
+            0.05,
+            0.1
+          ]
         },
         "teacher_ema_tau": {
           "type": "categorical",
@@ -562,6 +620,7 @@
           "keys": [
             "lr",
             "batch_size",
+            "update_every_episodes",
             "num_epochs",
             "num_hidden",
             "widths",
@@ -579,9 +638,15 @@
             "num_tokens",
             "ctx_logvar_min",
             "ctx_logvar_max"
-          ]
+          ],
+          "required": true
         }
       ]
     }
-  ]
+  ],
+  "task_overrides": {
+    "episodes": 8000,
+    "eval_every_episodes": 0,
+    "test_rollouts": 4
+  }
 }

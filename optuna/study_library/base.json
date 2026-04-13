@@ -3,167 +3,18 @@
   "notes": [
     "This file is a guide. study.py rejects it on purpose.",
     "Copy it to a new manifest, remove template=true, then trim it down to the study you want.",
-    "Every search entry is a small typed object. The sampler reads the type field and handles it accordingly.",
-    "PIMAC chaining is declared with inherit blocks. Later variants pull selected keys from the best completed parent config in the same suite.",
-    "The random algorithm is shown here only as a config guide. study.py does not run random."
+    "parallel-jobs now means max concurrent algorithm studies inside one manifest DAG.",
+    "Active sweep manifests disable during-training evaluation with eval_every_episodes=0 and rank configs by final held-out evaluation only.",
+    "The held-out split used inside sweeps still comes from the existing test_* task fields. Multi-seed confirmatory reruns stay manual."
   ],
   "task": "simple_spread_dynamic_hard",
   "seed": 42,
   "task_overrides": {
-    "episodes": 22500,
-    "validation_frequency": 500,
-    "validation_rollouts": 8,
-    "test_rollouts": 12
+    "episodes": 8000,
+    "eval_every_episodes": 0,
+    "test_rollouts": 4
   },
   "algorithms": [
-    {
-      "name": "mappo",
-      "trials": 12,
-      "base_config": "simple_spread_dynamic_hard/configs/mappo/default.json",
-      "search": {
-        "actor_arch": {
-          "type": "categorical",
-          "values": [
-            {
-              "num_hidden": 1,
-              "widths": [
-                64,
-                64
-              ]
-            },
-            {
-              "num_hidden": 1,
-              "widths": [
-                96,
-                96
-              ]
-            },
-            {
-              "num_hidden": 2,
-              "widths": [
-                64,
-                96,
-                64
-              ]
-            },
-            {
-              "num_hidden": 2,
-              "widths": [
-                96,
-                128,
-                96
-              ]
-            }
-          ],
-          "merge": true
-        },
-        "lr": {
-          "type": "float",
-          "low": 0.0003,
-          "high": 0.0011,
-          "log": true
-        },
-        "batch_size": {
-          "type": "categorical",
-          "values": [
-            24,
-            32,
-            48
-          ]
-        },
-        "num_epochs": {
-          "type": "categorical",
-          "values": [
-            2,
-            3,
-            4,
-            5
-          ]
-        },
-        "rnn_hidden_dim": {
-          "type": "categorical",
-          "values": [
-            64,
-            80,
-            96,
-            112
-          ]
-        },
-        "clip_eps": {
-          "type": "categorical",
-          "values": [
-            0.2,
-            0.25,
-            0.3
-          ]
-        },
-        "gamma": {
-          "type": "categorical",
-          "values": [
-            0.97,
-            0.98,
-            0.985
-          ]
-        },
-        "gae_lambda": {
-          "type": "categorical",
-          "values": [
-            0.95,
-            0.97
-          ]
-        },
-        "entropy_coef": {
-          "type": "float",
-          "low": 0.0003,
-          "high": 0.0025,
-          "log": true
-        },
-        "value_coef": {
-          "type": "categorical",
-          "values": [
-            0.5,
-            0.75,
-            1.0
-          ]
-        },
-        "max_grad_norm": {
-          "type": "categorical",
-          "values": [
-            1.0,
-            2.0,
-            5.0
-          ]
-        },
-        "critic_hidden_sizes": {
-          "type": "categorical",
-          "values": [
-            [
-              96,
-              96
-            ],
-            [
-              128,
-              96
-            ],
-            [
-              96,
-              96,
-              96
-            ],
-            [
-              128,
-              128
-            ],
-            [
-              128,
-              128,
-              128
-            ]
-          ]
-        }
-      },
-      "note": "Example PPO-style centralized-critic search."
-    },
     {
       "name": "ippo",
       "trials": 8,
@@ -286,6 +137,540 @@
       "note": "Example independent PPO search."
     },
     {
+      "name": "mappo",
+      "trials": 12,
+      "base_config": "simple_spread_dynamic_hard/configs/mappo/default.json",
+      "search": {
+        "critic_hidden_sizes": {
+          "type": "categorical",
+          "values": [
+            [
+              96,
+              96
+            ],
+            [
+              128,
+              96
+            ],
+            [
+              96,
+              96,
+              96
+            ],
+            [
+              128,
+              128
+            ],
+            [
+              128,
+              128,
+              128
+            ]
+          ]
+        }
+      },
+      "note": "Example PPO-style centralized-critic search.",
+      "inherit": [
+        {
+          "from": "ippo",
+          "keys": [
+            "lr",
+            "batch_size",
+            "update_every_episodes",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm"
+          ],
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "pimac_v0",
+      "trials": 8,
+      "base_config": "simple_spread_dynamic_hard/configs/pimac_v0/default.json",
+      "search": {
+        "critic_hidden_sizes": {
+          "type": "categorical",
+          "values": [
+            [
+              128,
+              128
+            ],
+            [
+              128,
+              128,
+              128
+            ],
+            [
+              160,
+              128
+            ],
+            [
+              160,
+              160
+            ]
+          ]
+        },
+        "set_embed_dim": {
+          "type": "categorical",
+          "values": [
+            128,
+            160
+          ]
+        },
+        "set_encoder_hidden_sizes": {
+          "type": "categorical",
+          "values": [
+            [
+              128,
+              96
+            ],
+            [
+              128,
+              128
+            ],
+            [
+              160,
+              96
+            ]
+          ]
+        },
+        "include_team_size_feature": {
+          "type": "categorical",
+          "values": [
+            true,
+            false
+          ]
+        }
+      },
+      "inherit": [
+        {
+          "from": "mappo",
+          "keys": [
+            "lr",
+            "batch_size",
+            "update_every_episodes",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm"
+          ],
+          "required": true
+        }
+      ],
+      "note": "PIMAC v0 inherits the MAPPO backbone keys and tunes only set-critic structure."
+    },
+    {
+      "name": "pimac_v1",
+      "trials": 8,
+      "base_config": "simple_spread_dynamic_hard/configs/pimac_v1/default.json",
+      "search": {
+        "num_tokens": {
+          "type": "categorical",
+          "values": [
+            3,
+            4,
+            5
+          ]
+        },
+        "distill_weight": {
+          "type": "float",
+          "low": 5e-05,
+          "high": 0.001,
+          "log": true
+        },
+        "counterfactual_weight": {
+          "type": "categorical",
+          "values": [
+            0.0,
+            0.01,
+            0.02,
+            0.05,
+            0.1
+          ]
+        },
+        "teacher_ema_tau": {
+          "type": "categorical",
+          "values": [
+            0.0025,
+            0.005,
+            0.01
+          ]
+        },
+        "ctx_logvar_bounds": {
+          "type": "categorical",
+          "values": [
+            [
+              -0.5,
+              1.0
+            ],
+            [
+              -0.5,
+              0.75
+            ],
+            [
+              -0.5,
+              0.5
+            ],
+            [
+              -0.25,
+              0.75
+            ],
+            [
+              -0.25,
+              0.5
+            ],
+            [
+              0.0,
+              0.5
+            ]
+          ],
+          "targets": [
+            "ctx_logvar_min",
+            "ctx_logvar_max"
+          ]
+        }
+      },
+      "inherit": [
+        {
+          "from": "pimac_v0",
+          "keys": [
+            "lr",
+            "batch_size",
+            "update_every_episodes",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm",
+            "critic_hidden_sizes",
+            "set_embed_dim",
+            "set_encoder_hidden_sizes",
+            "include_team_size_feature"
+          ],
+          "required": true
+        }
+      ],
+      "note": "Shows a PIMAC v1 study with token count, distillation, and optional ctx logvar bounds."
+    },
+    {
+      "name": "pimac_v2",
+      "trials": 8,
+      "base_config": "simple_spread_dynamic_hard/configs/pimac_v2/default.json",
+      "search": {
+        "distill_weight": {
+          "type": "float",
+          "low": 0.0004,
+          "high": 0.003,
+          "log": true
+        },
+        "counterfactual_weight": {
+          "type": "categorical",
+          "values": [
+            0.0,
+            0.01,
+            0.02,
+            0.05,
+            0.1
+          ]
+        },
+        "teacher_ema_tau": {
+          "type": "categorical",
+          "values": [
+            0.0025,
+            0.005,
+            0.01,
+            0.02
+          ]
+        },
+        "ctx_logvar_bounds": {
+          "type": "categorical",
+          "values": [
+            [
+              -0.5,
+              1.0
+            ],
+            [
+              -0.5,
+              0.75
+            ],
+            [
+              -0.5,
+              0.5
+            ],
+            [
+              -0.25,
+              0.75
+            ],
+            [
+              -0.25,
+              0.5
+            ],
+            [
+              0.0,
+              0.5
+            ]
+          ],
+          "targets": [
+            "ctx_logvar_min",
+            "ctx_logvar_max"
+          ]
+        }
+      },
+      "inherit": [
+        {
+          "from": "pimac_v1",
+          "keys": [
+            "lr",
+            "batch_size",
+            "update_every_episodes",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm",
+            "critic_hidden_sizes",
+            "set_embed_dim",
+            "set_encoder_hidden_sizes",
+            "include_team_size_feature",
+            "num_tokens"
+          ],
+          "required": true
+        }
+      ],
+      "note": "Shows target assignment through ctx_logvar_bounds -> ctx_logvar_min/max."
+    },
+    {
+      "name": "pimac_v3",
+      "trials": 8,
+      "base_config": "simple_spread_dynamic_hard/configs/pimac_v3/default.json",
+      "search": {
+        "distill_weight": {
+          "type": "float",
+          "low": 8e-05,
+          "high": 0.0008,
+          "log": true
+        },
+        "counterfactual_weight": {
+          "type": "categorical",
+          "values": [
+            0.0,
+            0.01,
+            0.02,
+            0.05,
+            0.1
+          ]
+        },
+        "teacher_ema_tau": {
+          "type": "categorical",
+          "values": [
+            0.005,
+            0.01,
+            0.02
+          ]
+        },
+        "hypernet_rank": {
+          "type": "categorical",
+          "values": [
+            1,
+            2
+          ]
+        },
+        "hypernet_hidden_sizes": {
+          "type": "categorical",
+          "values": [
+            [
+              16,
+              16
+            ],
+            [
+              32,
+              16
+            ],
+            [
+              32,
+              32
+            ],
+            [
+              64,
+              32
+            ]
+          ]
+        },
+        "hypernet_delta_init_scale": {
+          "type": "categorical",
+          "values": [
+            0.001,
+            0.0025,
+            0.005,
+            0.01
+          ]
+        },
+        "hypernet_l2_coef": {
+          "type": "float",
+          "low": 0.0001,
+          "high": 0.0015,
+          "log": true
+        }
+      },
+      "inherit": [
+        {
+          "from": "pimac_v2",
+          "keys": [
+            "lr",
+            "batch_size",
+            "update_every_episodes",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm",
+            "critic_hidden_sizes",
+            "set_embed_dim",
+            "set_encoder_hidden_sizes",
+            "include_team_size_feature",
+            "num_tokens",
+            "ctx_logvar_min",
+            "ctx_logvar_max"
+          ],
+          "required": true
+        }
+      ],
+      "note": "Shows the head-only hypernet study on top of the v2 inheritance chain."
+    },
+    {
+      "name": "pimac_v4",
+      "trials": 8,
+      "base_config": "simple_spread_dynamic_hard/configs/pimac_v4/default.json",
+      "search": {
+        "distill_weight": {
+          "type": "float",
+          "low": 8e-05,
+          "high": 0.0008,
+          "log": true
+        },
+        "counterfactual_weight": {
+          "type": "categorical",
+          "values": [
+            0.0,
+            0.01,
+            0.02,
+            0.05,
+            0.1
+          ]
+        },
+        "teacher_ema_tau": {
+          "type": "categorical",
+          "values": [
+            0.005,
+            0.01,
+            0.02
+          ]
+        },
+        "hypernet_rank": {
+          "type": "categorical",
+          "values": [
+            1,
+            2
+          ]
+        },
+        "hypernet_hidden_sizes": {
+          "type": "categorical",
+          "values": [
+            [
+              16,
+              16
+            ],
+            [
+              32,
+              16
+            ],
+            [
+              32,
+              32
+            ],
+            [
+              64,
+              32
+            ]
+          ]
+        },
+        "hypernet_delta_init_scale": {
+          "type": "categorical",
+          "values": [
+            0.001,
+            0.0025,
+            0.005,
+            0.01
+          ]
+        },
+        "hypernet_l2_coef": {
+          "type": "float",
+          "low": 0.0001,
+          "high": 0.0015,
+          "log": true
+        }
+      },
+      "inherit": [
+        {
+          "from": "pimac_v3",
+          "keys": [
+            "lr",
+            "batch_size",
+            "update_every_episodes",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm",
+            "critic_hidden_sizes",
+            "set_embed_dim",
+            "set_encoder_hidden_sizes",
+            "include_team_size_feature",
+            "num_tokens",
+            "ctx_logvar_min",
+            "ctx_logvar_max"
+          ],
+          "required": true
+        }
+      ],
+      "note": "Shows the FiLM-plus-head study inheriting the stabilized backbone from pimac_v3."
+    },
+    {
       "name": "iql",
       "trials": 8,
       "base_config": "simple_spread_dynamic_hard/configs/iql/default.json",
@@ -392,15 +777,6 @@
             2.0
           ]
         },
-        "temp_decay": {
-          "type": "categorical",
-          "values": [
-            0.9995,
-            0.9997,
-            0.99985,
-            0.9999
-          ]
-        },
         "temp_min": {
           "type": "categorical",
           "values": [
@@ -422,6 +798,15 @@
             10.0,
             20.0
           ]
+        },
+        "temp_gap_fraction_at_budget": {
+          "type": "categorical",
+          "values": [
+            0.01,
+            0.05,
+            0.1,
+            0.2
+          ]
         }
       },
       "note": "Example value-learning search with dynamic-task temperatures."
@@ -431,110 +816,11 @@
       "trials": 8,
       "base_config": "simple_spread_dynamic_hard/configs/vdn/default.json",
       "search": {
-        "vdn_arch": {
-          "type": "categorical",
-          "values": [
-            {
-              "num_hidden": 2,
-              "widths": [
-                64,
-                128,
-                64
-              ]
-            },
-            {
-              "num_hidden": 2,
-              "widths": [
-                128,
-                128,
-                128
-              ]
-            }
-          ],
-          "merge": true
-        },
-        "lr": {
-          "type": "float",
-          "low": 0.0001,
-          "high": 0.001,
-          "log": true
-        },
-        "batch_size": {
-          "type": "categorical",
-          "values": [
-            32,
-            64
-          ]
-        },
-        "num_epochs": {
-          "type": "categorical",
-          "values": [
-            1,
-            2
-          ]
-        },
-        "rnn_hidden_dim": {
-          "type": "constant",
-          "value": 64
-        },
-        "gamma": {
-          "type": "categorical",
-          "values": [
-            0.97,
-            0.99
-          ]
-        },
-        "target_update_every": {
-          "type": "categorical",
-          "values": [
-            200,
-            400
-          ]
-        },
-        "learn_every_steps": {
-          "type": "categorical",
-          "values": [
-            8,
-            16
-          ]
-        },
         "double_q": {
           "type": "categorical",
           "values": [
             true,
             false
-          ]
-        },
-        "tau": {
-          "type": "categorical",
-          "values": [
-            0.1,
-            0.5,
-            1.0
-          ]
-        },
-        "temp_init": {
-          "type": "categorical",
-          "values": [
-            1.0,
-            1.5,
-            2.0
-          ]
-        },
-        "temp_decay": {
-          "type": "categorical",
-          "values": [
-            0.9995,
-            0.9997,
-            0.99985,
-            0.9999
-          ]
-        },
-        "temp_min": {
-          "type": "categorical",
-          "values": [
-            0.1,
-            0.2
           ]
         },
         "use_huber_loss": {
@@ -544,136 +830,45 @@
             false
           ]
         },
-        "max_grad_norm": {
-          "type": "categorical",
-          "values": [
-            5.0,
-            10.0
-          ]
-        },
         "share_parameters": {
           "type": "constant",
           "value": true
         }
       },
-      "note": "Example joint value-factorization search."
+      "note": "Example joint value-factorization search.",
+      "inherit": [
+        {
+          "from": "iql",
+          "keys": [
+            "lr",
+            "batch_size",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "gamma",
+            "target_update_every",
+            "tau",
+            "temp_init",
+            "temp_decay",
+            "temp_min",
+            "learn_every_steps",
+            "max_grad_norm"
+          ],
+          "required": true
+        }
+      ]
     },
     {
       "name": "qmix",
       "trials": 8,
       "base_config": "simple_spread_dynamic_hard/configs/qmix/default.json",
       "search": {
-        "qmix_arch": {
-          "type": "categorical",
-          "values": [
-            {
-              "num_hidden": 2,
-              "widths": [
-                64,
-                128,
-                64
-              ]
-            },
-            {
-              "num_hidden": 2,
-              "widths": [
-                128,
-                128,
-                128
-              ]
-            }
-          ],
-          "merge": true
-        },
-        "lr": {
-          "type": "float",
-          "low": 0.0001,
-          "high": 0.001,
-          "log": true
-        },
-        "batch_size": {
-          "type": "categorical",
-          "values": [
-            32,
-            64
-          ]
-        },
-        "num_epochs": {
-          "type": "categorical",
-          "values": [
-            1,
-            2
-          ]
-        },
-        "rnn_hidden_dim": {
-          "type": "constant",
-          "value": 64
-        },
-        "gamma": {
-          "type": "categorical",
-          "values": [
-            0.97,
-            0.99
-          ]
-        },
-        "target_update_every": {
-          "type": "categorical",
-          "values": [
-            200,
-            400
-          ]
-        },
-        "learn_every_steps": {
-          "type": "categorical",
-          "values": [
-            8,
-            16
-          ]
-        },
         "double_q": {
           "type": "categorical",
           "values": [
             true,
             false
-          ]
-        },
-        "tau": {
-          "type": "categorical",
-          "values": [
-            0.1,
-            0.5,
-            1.0
-          ]
-        },
-        "temp_init": {
-          "type": "categorical",
-          "values": [
-            1.0,
-            1.5,
-            2.0
-          ]
-        },
-        "temp_decay": {
-          "type": "categorical",
-          "values": [
-            0.9995,
-            0.9997,
-            0.99985,
-            0.9999
-          ]
-        },
-        "temp_min": {
-          "type": "categorical",
-          "values": [
-            0.1,
-            0.2
-          ]
-        },
-        "max_grad_norm": {
-          "type": "categorical",
-          "values": [
-            5.0,
-            10.0
           ]
         },
         "mixing_embed_dim": {
@@ -721,70 +916,10 @@
           "value": true
         }
       },
-      "note": "Example QMIX search using mixing_widths + length_target."
-    },
-    {
-      "name": "pimac_v0",
-      "trials": 8,
-      "base_config": "simple_spread_dynamic_hard/configs/pimac_v0/default.json",
-      "search": {
-        "critic_hidden_sizes": {
-          "type": "categorical",
-          "values": [
-            [
-              128,
-              128
-            ],
-            [
-              128,
-              128,
-              128
-            ],
-            [
-              160,
-              128
-            ],
-            [
-              160,
-              160
-            ]
-          ]
-        },
-        "set_embed_dim": {
-          "type": "categorical",
-          "values": [
-            128,
-            160
-          ]
-        },
-        "set_encoder_hidden_sizes": {
-          "type": "categorical",
-          "values": [
-            [
-              128,
-              96
-            ],
-            [
-              128,
-              128
-            ],
-            [
-              160,
-              96
-            ]
-          ]
-        },
-        "include_team_size_feature": {
-          "type": "categorical",
-          "values": [
-            true,
-            false
-          ]
-        }
-      },
+      "note": "Example QMIX search using mixing_widths + length_target.",
       "inherit": [
         {
-          "from": "mappo",
+          "from": "iql",
           "keys": [
             "lr",
             "batch_size",
@@ -792,386 +927,18 @@
             "num_hidden",
             "widths",
             "rnn_hidden_dim",
-            "clip_eps",
             "gamma",
-            "gae_lambda",
-            "entropy_coef",
-            "value_coef",
+            "target_update_every",
+            "tau",
+            "temp_init",
+            "temp_decay",
+            "temp_min",
+            "learn_every_steps",
             "max_grad_norm"
           ],
           "required": true
         }
-      ],
-      "note": "PIMAC v0 inherits the MAPPO backbone keys and tunes only set-critic structure."
-    },
-    {
-      "name": "pimac_v1",
-      "trials": 8,
-      "base_config": "simple_spread_dynamic_hard/configs/pimac_v1/default.json",
-      "search": {
-        "num_tokens": {
-          "type": "categorical",
-          "values": [
-            3,
-            4,
-            5
-          ]
-        },
-        "distill_weight": {
-          "type": "float",
-          "low": 5e-05,
-          "high": 0.001,
-          "log": true
-        },
-        "teacher_ema_tau": {
-          "type": "categorical",
-          "values": [
-            0.0025,
-            0.005,
-            0.01
-          ]
-        },
-        "ctx_logvar_bounds": {
-          "type": "categorical",
-          "values": [
-            [
-              -1.5,
-              1.0
-            ],
-            [
-              -1.0,
-              1.0
-            ],
-            [
-              -0.5,
-              1.0
-            ],
-            [
-              -0.25,
-              0.75
-            ],
-            [
-              -0.25,
-              0.5
-            ],
-            [
-              0.0,
-              0.5
-            ]
-          ],
-          "targets": [
-            "ctx_logvar_min",
-            "ctx_logvar_max"
-          ]
-        }
-      },
-      "inherit": [
-        {
-          "from": "mappo",
-          "keys": [
-            "lr",
-            "batch_size",
-            "num_epochs",
-            "num_hidden",
-            "widths",
-            "rnn_hidden_dim",
-            "clip_eps",
-            "gamma",
-            "gae_lambda",
-            "entropy_coef",
-            "value_coef",
-            "max_grad_norm"
-          ],
-          "required": true
-        },
-        {
-          "from": "pimac_v0",
-          "keys": [
-            "critic_hidden_sizes",
-            "set_embed_dim",
-            "set_encoder_hidden_sizes",
-            "include_team_size_feature"
-          ],
-          "required": true
-        }
-      ],
-      "note": "Shows a PIMAC v1 study with token count, distillation, and optional ctx logvar bounds."
-    },
-    {
-      "name": "pimac_v2",
-      "trials": 8,
-      "base_config": "simple_spread_dynamic_hard/configs/pimac_v2/default.json",
-      "search": {
-        "distill_weight": {
-          "type": "float",
-          "low": 0.0004,
-          "high": 0.003,
-          "log": true
-        },
-        "teacher_ema_tau": {
-          "type": "categorical",
-          "values": [
-            0.0025,
-            0.005,
-            0.01,
-            0.02
-          ]
-        },
-        "ctx_logvar_bounds": {
-          "type": "categorical",
-          "values": [
-            [
-              -0.5,
-              1.0
-            ],
-            [
-              -0.5,
-              0.75
-            ],
-            [
-              -0.5,
-              0.5
-            ],
-            [
-              -0.25,
-              0.75
-            ],
-            [
-              -0.25,
-              0.5
-            ],
-            [
-              0.0,
-              0.5
-            ]
-          ],
-          "targets": [
-            "ctx_logvar_min",
-            "ctx_logvar_max"
-          ]
-        }
-      },
-      "inherit": [
-        {
-          "from": "mappo",
-          "keys": [
-            "lr",
-            "batch_size",
-            "num_epochs",
-            "num_hidden",
-            "widths",
-            "rnn_hidden_dim",
-            "clip_eps",
-            "gamma",
-            "gae_lambda",
-            "entropy_coef",
-            "value_coef",
-            "max_grad_norm"
-          ],
-          "required": true
-        },
-        {
-          "from": "pimac_v1",
-          "keys": [
-            "critic_hidden_sizes",
-            "set_embed_dim",
-            "set_encoder_hidden_sizes",
-            "include_team_size_feature",
-            "num_tokens"
-          ],
-          "required": true
-        }
-      ],
-      "note": "Shows target assignment through ctx_logvar_bounds -> ctx_logvar_min/max."
-    },
-    {
-      "name": "pimac_v3",
-      "trials": 8,
-      "base_config": "simple_spread_dynamic_hard/configs/pimac_v3/default.json",
-      "search": {
-        "distill_weight": {
-          "type": "float",
-          "low": 8e-05,
-          "high": 0.0008,
-          "log": true
-        },
-        "teacher_ema_tau": {
-          "type": "categorical",
-          "values": [
-            0.005,
-            0.01,
-            0.02
-          ]
-        },
-        "hypernet_rank": {
-          "type": "categorical",
-          "values": [
-            1,
-            2
-          ]
-        },
-        "hypernet_hidden_sizes": {
-          "type": "categorical",
-          "values": [
-            [
-              16,
-              16
-            ],
-            [
-              32,
-              16
-            ],
-            [
-              32,
-              32
-            ],
-            [
-              64,
-              32
-            ]
-          ]
-        },
-        "hypernet_delta_init_scale": {
-          "type": "categorical",
-          "values": [
-            0.001,
-            0.0025,
-            0.005,
-            0.01
-          ]
-        },
-        "hypernet_l2_coef": {
-          "type": "float",
-          "low": 0.0001,
-          "high": 0.0015,
-          "log": true
-        }
-      },
-      "inherit": [
-        {
-          "from": "mappo",
-          "keys": [
-            "lr",
-            "batch_size",
-            "num_epochs",
-            "num_hidden",
-            "widths",
-            "rnn_hidden_dim",
-            "clip_eps",
-            "gamma",
-            "gae_lambda",
-            "entropy_coef",
-            "value_coef",
-            "max_grad_norm"
-          ],
-          "required": true
-        },
-        {
-          "from": "pimac_v2",
-          "keys": [
-            "critic_hidden_sizes",
-            "set_embed_dim",
-            "set_encoder_hidden_sizes",
-            "include_team_size_feature",
-            "num_tokens",
-            "ctx_logvar_min",
-            "ctx_logvar_max"
-          ],
-          "required": true
-        }
-      ],
-      "note": "Shows the head-only hypernet study on top of the v2 inheritance chain."
-    },
-    {
-      "name": "pimac_v4",
-      "trials": 8,
-      "base_config": "simple_spread_dynamic_hard/configs/pimac_v4/default.json",
-      "search": {
-        "distill_weight": {
-          "type": "float",
-          "low": 8e-05,
-          "high": 0.0008,
-          "log": true
-        },
-        "teacher_ema_tau": {
-          "type": "categorical",
-          "values": [
-            0.005,
-            0.01,
-            0.02
-          ]
-        },
-        "hypernet_rank": {
-          "type": "categorical",
-          "values": [
-            1,
-            2
-          ]
-        },
-        "hypernet_hidden_sizes": {
-          "type": "categorical",
-          "values": [
-            [
-              16,
-              16
-            ],
-            [
-              32,
-              16
-            ],
-            [
-              32,
-              32
-            ],
-            [
-              64,
-              32
-            ]
-          ]
-        },
-        "hypernet_delta_init_scale": {
-          "type": "categorical",
-          "values": [
-            0.001,
-            0.0025,
-            0.005,
-            0.01
-          ]
-        },
-        "hypernet_l2_coef": {
-          "type": "float",
-          "low": 0.0001,
-          "high": 0.0015,
-          "log": true
-        }
-      },
-      "inherit": [
-        {
-          "from": "pimac_v3",
-          "keys": [
-            "lr",
-            "batch_size",
-            "num_epochs",
-            "num_hidden",
-            "widths",
-            "rnn_hidden_dim",
-            "clip_eps",
-            "gamma",
-            "gae_lambda",
-            "entropy_coef",
-            "value_coef",
-            "max_grad_norm",
-            "critic_hidden_sizes",
-            "set_embed_dim",
-            "set_encoder_hidden_sizes",
-            "include_team_size_feature",
-            "num_tokens",
-            "ctx_logvar_min",
-            "ctx_logvar_max"
-          ]
-        }
-      ],
-      "note": "Shows the FiLM-plus-head study inheriting the stabilized backbone from pimac_v3."
+      ]
     },
     {
       "name": "random",

@@ -200,28 +200,11 @@ def run_task(
                 best_eval = float(eval_result.return_mean)
 
     learner.save_checkpoint(final_ckpt_path)
-    if not best_ckpt_path.is_file():
+    if validation_results and not best_ckpt_path.is_file():
         learner.save_checkpoint(best_ckpt_path)
 
-    best_learner = type(learner).load_checkpoint(
-        best_ckpt_path,
-        env_spec=learner.env_spec,
-        config=learner.config,
-        device=str(learner.device),
-    )
-    best_checkpoint_test = run_fixed_evaluation(
-        checkpoint_episode=int(task_config["episodes"]),
-        phase="best_checkpoint_test",
-        rollout_count=int(task_config["test_rollouts"]),
-        evaluate_rollouts_fn=lambda rollout_count: evaluate_rollouts(
-            best_learner,
-            task_config,
-            seed=seed,
-            rollout_count=rollout_count,
-            seed_offset=int(task_config["test_seed_offset"]),
-            make_env_fn=make_env,
-        ),
-    )
+    best_checkpoint_test = None
+    best_learner = learner
     final_checkpoint_test = run_fixed_evaluation(
         checkpoint_episode=int(task_config["episodes"]),
         phase="final_checkpoint_test",
@@ -235,6 +218,26 @@ def run_task(
             make_env_fn=make_env,
         ),
     )
+    if validation_results:
+        best_learner = type(learner).load_checkpoint(
+            best_ckpt_path,
+            env_spec=learner.env_spec,
+            config=learner.config,
+            device=str(learner.device),
+        )
+        best_checkpoint_test = run_fixed_evaluation(
+            checkpoint_episode=int(task_config["episodes"]),
+            phase="best_checkpoint_test",
+            rollout_count=int(task_config["test_rollouts"]),
+            evaluate_rollouts_fn=lambda rollout_count: evaluate_rollouts(
+                best_learner,
+                task_config,
+                seed=seed,
+                rollout_count=rollout_count,
+                seed_offset=int(task_config["test_seed_offset"]),
+                make_env_fn=make_env,
+            ),
+        )
 
     update_history_rows = flatten_update_history(learner.get_update_history())
     extra_metrics = {
@@ -267,7 +270,7 @@ def run_task(
     write_csv(out_dir / "train_history.csv", train_history_rows)
     write_csv(
         out_dir / "eval_history.csv",
-        [asdict(eval_result) for eval_result in [*validation_results, best_checkpoint_test, final_checkpoint_test]],
+        [asdict(eval_result) for eval_result in ([*validation_results, best_checkpoint_test, final_checkpoint_test] if best_checkpoint_test is not None else [final_checkpoint_test])],
     )
     save_update_history_json(out_dir / "update_history.json", learner.get_update_history())
     save_update_history_csv(out_dir / "update_history.csv", learner.get_update_history())

@@ -161,7 +161,7 @@ def build_summary(
     algorithm: str,
     seed: int,
     validation_results: Sequence[EvalResult],
-    best_checkpoint_test: EvalResult,
+    best_checkpoint_test: Optional[EvalResult],
     final_checkpoint_test: EvalResult,
     train_history_rows: Sequence[dict],
     extra_metrics: Optional[dict[str, float]] = None,
@@ -188,8 +188,25 @@ def build_summary(
         best_validation_episode = -1
         convergence_episode = -1
 
-    best_checkpoint_mean = float(best_checkpoint_test.return_mean)
     final_checkpoint_mean = float(final_checkpoint_test.return_mean)
+    uses_validation_selection = bool(validation_results)
+    test_summary = {
+        "final_checkpoint_mean": final_checkpoint_mean,
+        "final_checkpoint_std": float(final_checkpoint_test.return_std),
+        "objective_score": final_checkpoint_mean,
+        "best_vs_final_drop": 0.0,
+    }
+    if uses_validation_selection:
+        assert best_checkpoint_test is not None
+        best_checkpoint_mean = float(best_checkpoint_test.return_mean)
+        test_summary = {
+            "best_checkpoint_mean": best_checkpoint_mean,
+            "best_checkpoint_std": float(best_checkpoint_test.return_std),
+            "final_checkpoint_mean": final_checkpoint_mean,
+            "final_checkpoint_std": float(final_checkpoint_test.return_std),
+            "objective_score": float(0.7 * best_checkpoint_mean + 0.3 * final_checkpoint_mean),
+            "best_vs_final_drop": float(best_checkpoint_mean - final_checkpoint_mean),
+        }
 
     return {
         "env_name": str(task_config["env_name"]),
@@ -215,14 +232,7 @@ def build_summary(
             "best_validation_episode": best_validation_episode,
             "convergence_episode_90pct": convergence_episode,
         },
-        "test": {
-            "best_checkpoint_mean": best_checkpoint_mean,
-            "best_checkpoint_std": float(best_checkpoint_test.return_std),
-            "final_checkpoint_mean": final_checkpoint_mean,
-            "final_checkpoint_std": float(final_checkpoint_test.return_std),
-            "objective_score": float(0.7 * best_checkpoint_mean + 0.3 * final_checkpoint_mean),
-            "best_vs_final_drop": float(best_checkpoint_mean - final_checkpoint_mean),
-        },
+        "test": test_summary,
         "extra_metrics": dict(sorted((extra_metrics or {}).items())),
     }
 

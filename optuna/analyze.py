@@ -68,10 +68,14 @@ def discover_best_runs(*, suite_id: str, task_id: str, results_root: Path = OPTU
             continue
         row = ranked_rows[0][1]
         run_output_dir = Path(row["run_output_dir"])
-        checkpoint_path = run_output_dir / "best_checkpoint.pt"
         summary_path = run_output_dir / "summary.json"
         config_snapshot_path = run_output_dir / "config_snapshot.json"
-        if not (checkpoint_path.is_file() and summary_path.is_file() and config_snapshot_path.is_file()):
+        if not (summary_path.is_file() and config_snapshot_path.is_file()):
+            continue
+        checkpoint_path = run_output_dir / "best_checkpoint.pt"
+        if not checkpoint_path.is_file():
+            checkpoint_path = run_output_dir / "final_checkpoint.pt"
+        if not checkpoint_path.is_file():
             continue
         discovered.append(
             BestRun(
@@ -159,7 +163,7 @@ def _run_one_rollout(*, task_id: str, task_config: dict, task_script, env_spec, 
     return float(total_reward / max(1, len(agent_ids))), frames
 
 
-def compare_best_checkpoints(
+def compare_selected_checkpoints(
     *,
     suite_id: str,
     task_id: str,
@@ -174,7 +178,7 @@ def compare_best_checkpoints(
     if not best_runs:
         raise RuntimeError(f"No best runs discovered for {suite_id}/{task_id}.")
 
-    resolved_output_dir = Path(output_dir) if output_dir is not None else _suite_root(suite_id, results_root) / "best_checkpoint_comparison" / task_id
+    resolved_output_dir = Path(output_dir) if output_dir is not None else _suite_root(suite_id, results_root) / "checkpoint_comparison" / task_id
     if resolved_output_dir.exists() and overwrite:
         shutil.rmtree(resolved_output_dir)
     resolved_output_dir.mkdir(parents=True, exist_ok=True)
@@ -819,7 +823,7 @@ def main(argv: list[str] | None = None) -> int:
         print(output_dir)
         return 0
     if args.command == "compare":
-        output_dir = compare_best_checkpoints(
+        output_dir = compare_selected_checkpoints(
             suite_id=args.suite_id,
             task_id=args.task,
             seed=int(args.seed),

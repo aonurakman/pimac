@@ -26,6 +26,7 @@ from typing import Optional, Sequence
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 
 from algorithms.base import (
@@ -67,6 +68,7 @@ PIMACV4_DEFAULT_CONFIG = {
     "include_team_size_feature": True,
     "num_tokens": 4,
     "distill_weight": 0.1,
+    "counterfactual_weight": 0.05,
     "teacher_ema_tau": 0.01,
     "hypernet_rank": 4,
     "hypernet_hidden_sizes": (128, 128),
@@ -379,7 +381,8 @@ class SetValueCritic(nn.Module):
     Centralized critic with tokenized team context.
 
     The teacher produces coordination tokens and per-agent context. Team value is
-    predicted from pooled tokens via `rho`.
+    predicted from pooled tokens via `rho`. A small per-agent head predicts a
+    counterfactual value estimate from teacher context.
     """
 
     def __init__(
@@ -408,6 +411,7 @@ class SetValueCritic(nn.Module):
             hidden_sizes=tuple(critic_hidden_sizes),
             out_dim=1,
         )
+        self.counterfactual_head = nn.Linear(self.set_embed_dim, 1)
 
     def forward(
         self,
@@ -423,7 +427,8 @@ class SetValueCritic(nn.Module):
 
         Returns:
             team_values: [B, T]
-            (optional) tokens: [B, T, K, D], ctx_teacher: [B, T, N, D]
+            (optional) tokens: [B, T, K, D], ctx_teacher: [B, T, N, D],
+            counterfactual_predictions: [B, T, N]
         """
         tokens, ctx_teacher = self.teacher(obs, active_mask)
         team_context = tokens.mean(dim=2)
@@ -439,10 +444,12 @@ class SetValueCritic(nn.Module):
             batch_size,
             num_timesteps,
         )
+        counterfactual_predictions = self.counterfactual_head(ctx_teacher).squeeze(-1)
+        counterfactual_predictions = counterfactual_predictions * active_mask
 
         if not return_details:
             return team_values
-        return team_values, tokens, ctx_teacher
+        return team_values, tokens, ctx_teacher, counterfactual_predictions
 
 
 class PIMACV4(ParallelLearner):
@@ -482,6 +489,7 @@ class PIMACV4(ParallelLearner):
         self.set_embed_dim = int(config["set_embed_dim"])
         self.num_tokens = int(config["num_tokens"])
         self.distill_weight = float(config["distill_weight"])
+        self.counterfactual_weight = float(config["counterfactual_weight"])
         self.teacher_ema_tau = float(max(0.0, min(1.0, config["teacher_ema_tau"])))
         self.hypernet_rank = int(config["hypernet_rank"])
         self.hypernet_hidden_sizes = tuple(config["hypernet_hidden_sizes"])
@@ -1022,6 +1030,30 @@ class PIMACV4(ParallelLearner):
             return
         self._teacher_ema_update(self.target_teacher, self.critic.teacher, self.teacher_ema_tau)
 
+    def _counterfactual_targets(
+        self,
+        observations: torch.Tensor,
+        active_mask: torch.Tensor,
+        full_values: torch.Tensor,
+    ) -> torch.Tensor:
+        """Build detached leave-one-out value targets for each active agent slot."""
+        batch_size, num_timesteps, num_agents = active_mask.shape
+        target_values = torch.zeros(
+            batch_size,
+            num_timesteps,
+            num_agents,
+            dtype=full_values.dtype,
+            device=full_values.device,
+        )
+        detached_full_values = full_values.detach()
+        with torch.no_grad():
+            for agent_index in range(num_agents):
+                masked_active_mask = active_mask.clone()
+                masked_active_mask[..., agent_index] = 0.0
+                masked_values = self.critic(observations, masked_active_mask)
+                target_values[..., agent_index] = detached_full_values - masked_values
+        return target_values * active_mask
+
     def _compute_update_diagnostics(
         self,
         active_mask: torch.Tensor,
@@ -1135,6 +1167,9 @@ class PIMACV4(ParallelLearner):
         mean_explained_variances: list[float] = []
         mean_distill_losses: list[float] = []
         mean_distill_mses: list[float] = []
+        mean_counterfactual_losses: list[float] = []
+        mean_counterfactual_target_means: list[float] = []
+        mean_counterfactual_prediction_means: list[float] = []
         mean_hyper_l2s: list[float] = []
         mean_ctx_logvar_means: list[float] = []
         mean_ctx_logvar_stds: list[float] = []
@@ -1179,7 +1214,11 @@ class PIMACV4(ParallelLearner):
             policy_loss = -(torch.min(unclipped_surrogate, clipped_surrogate) * combined_mask).sum() / decision_denom
             entropy_bonus = (action_entropy * combined_mask).sum() / decision_denom
 
-            predicted_values, tokens, teacher_context = self.critic(observations, active_mask, return_details=True)
+            predicted_values, tokens, teacher_context, counterfactual_predictions = self.critic(
+                observations,
+                active_mask,
+                return_details=True,
+            )
             value_loss = (((returns - predicted_values) ** 2) * valid_time).sum() / valid_time.sum().clamp(min=1.0)
 
             teacher_for_targets = self._teacher_for_targets()
@@ -1201,6 +1240,17 @@ class PIMACV4(ParallelLearner):
             distillation_loss = (distillation_nll.sum(dim=-1) * combined_mask).sum() / decision_denom
 
             distillation_mse = (((student_context_mean - target_teacher_context) ** 2).mean(dim=-1) * combined_mask).sum() / decision_denom
+            if self.counterfactual_weight > 0.0:
+                counterfactual_targets = self._counterfactual_targets(observations, active_mask, predicted_values)
+                counterfactual_errors = F.huber_loss(
+                    counterfactual_predictions,
+                    counterfactual_targets,
+                    reduction="none",
+                )
+                counterfactual_loss = (counterfactual_errors * combined_mask).sum() / decision_denom
+            else:
+                counterfactual_targets = torch.zeros_like(counterfactual_predictions)
+                counterfactual_loss = torch.zeros((), dtype=predicted_values.dtype, device=self.device)
             hypernet_l2 = ((delta_weight_l2 + delta_bias_l2) * combined_mask).sum() / decision_denom
 
             total_loss = (
@@ -1208,6 +1258,7 @@ class PIMACV4(ParallelLearner):
                 + self.value_coef * value_loss
                 - self.entropy_coef * entropy_bonus
                 + self.distill_weight * distillation_loss
+                + self.counterfactual_weight * counterfactual_loss
                 + self.hypernet_l2_coef * hypernet_l2
             )
 
@@ -1250,6 +1301,13 @@ class PIMACV4(ParallelLearner):
             mean_explained_variances.append(float(diagnostics["explained_variance"].detach().item()))
             mean_distill_losses.append(float(distillation_loss.detach().item()))
             mean_distill_mses.append(float(distillation_mse.detach().item()))
+            mean_counterfactual_losses.append(float(counterfactual_loss.detach().item()))
+            mean_counterfactual_target_means.append(
+                float((counterfactual_targets * combined_mask).sum().detach().item() / float(decision_denom.detach().item()))
+            )
+            mean_counterfactual_prediction_means.append(
+                float((counterfactual_predictions * combined_mask).sum().detach().item() / float(decision_denom.detach().item()))
+            )
             mean_hyper_l2s.append(float(hypernet_l2.detach().item()))
             mean_ctx_logvar_means.append(float(diagnostics["ctx_logvar_mean"].detach().item()))
             mean_ctx_logvar_stds.append(float(diagnostics["ctx_logvar_std"].detach().item()))
@@ -1286,6 +1344,9 @@ class PIMACV4(ParallelLearner):
                 "explained_variance": float(np.mean(mean_explained_variances)),
                 "distill_loss": float(np.mean(mean_distill_losses)),
                 "distill_mse": float(np.mean(mean_distill_mses)),
+                "counterfactual_loss": float(np.mean(mean_counterfactual_losses)),
+                "counterfactual_target_mean": float(np.mean(mean_counterfactual_target_means)),
+                "counterfactual_prediction_mean": float(np.mean(mean_counterfactual_prediction_means)),
                 "hyper_l2": float(np.mean(mean_hyper_l2s)),
                 "ctx_logvar_mean": float(np.mean(mean_ctx_logvar_means)),
                 "ctx_logvar_std": float(np.mean(mean_ctx_logvar_stds)),

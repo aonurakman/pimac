@@ -396,32 +396,11 @@ def run_task(
                         best_eval = score
 
         learner.save_checkpoint(final_ckpt_path)
-        if not best_ckpt_path.is_file():
+        if validation_results and not best_ckpt_path.is_file():
             learner.save_checkpoint(best_ckpt_path)
 
-        best_learner = type(learner).load_checkpoint(
-            best_ckpt_path,
-            env_spec=learner.env_spec,
-            config=learner.config,
-            device=str(learner.device),
-        )
-        best_checkpoint_test_results = run_policy_evaluation(
-            task_config,
-            checkpoint_episode=int(task_config["episodes"]),
-            phase="best_checkpoint_test",
-            rollout_count=int(task_config["test_rollouts"]),
-            evaluate_one_count_fn=lambda eval_n_agents, rollout_count: evaluate_one_count(
-                best_learner,
-                task_config,
-                env_spec,
-                env_cache,
-                seed=seed,
-                n_agents=eval_n_agents,
-                rollout_count=rollout_count,
-                seed_offset=int(task_config["test_seed_offset"]),
-                make_env_fn=make_env,
-            ),
-        )
+        best_checkpoint_test_results: list[EvalResult] = []
+        best_learner = learner
         final_checkpoint_test_results = run_policy_evaluation(
             task_config,
             checkpoint_episode=int(task_config["episodes"]),
@@ -439,6 +418,30 @@ def run_task(
                 make_env_fn=make_env,
             ),
         )
+        if validation_results:
+            best_learner = type(learner).load_checkpoint(
+                best_ckpt_path,
+                env_spec=learner.env_spec,
+                config=learner.config,
+                device=str(learner.device),
+            )
+            best_checkpoint_test_results = run_policy_evaluation(
+                task_config,
+                checkpoint_episode=int(task_config["episodes"]),
+                phase="best_checkpoint_test",
+                rollout_count=int(task_config["test_rollouts"]),
+                evaluate_one_count_fn=lambda eval_n_agents, rollout_count: evaluate_one_count(
+                    best_learner,
+                    task_config,
+                    env_spec,
+                    env_cache,
+                    seed=seed,
+                    n_agents=eval_n_agents,
+                    rollout_count=rollout_count,
+                    seed_offset=int(task_config["test_seed_offset"]),
+                    make_env_fn=make_env,
+                ),
+            )
 
         update_history_rows = flatten_update_history(learner.get_update_history())
         extra_metrics = {
@@ -474,7 +477,14 @@ def run_task(
         write_csv(out_dir / "curriculum_trace.csv", curriculum_rows)
         write_csv(
             out_dir / "eval_by_count.csv",
-            [asdict(eval_result) for eval_result in [*validation_results, *best_checkpoint_test_results, *final_checkpoint_test_results]],
+            [
+                asdict(eval_result)
+                for eval_result in (
+                    [*validation_results, *best_checkpoint_test_results, *final_checkpoint_test_results]
+                    if best_checkpoint_test_results
+                    else [*final_checkpoint_test_results]
+                )
+            ],
         )
         save_update_history_json(out_dir / "update_history.json", learner.get_update_history())
         save_update_history_csv(out_dir / "update_history.csv", learner.get_update_history())

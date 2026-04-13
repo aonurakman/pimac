@@ -11,6 +11,7 @@ The manifest is the source of truth. It defines:
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 import json
 import subprocess
 import sys
@@ -324,6 +325,182 @@ def _algorithm_entries(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     return [dict(entry) for entry in manifest["algorithms"]]
 
 
+def _completed_trial_count(study: optuna_lib.Study) -> int:
+    return sum(
+        1 for trial in study.trials if trial.state == optuna_lib.trial.TrialState.COMPLETE and trial.value is not None
+    )
+
+
+def _manifest_dependencies(algorithm_entries: Sequence[dict[str, Any]]) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    manifest_algorithms = {str(entry["name"]) for entry in algorithm_entries}
+    manifest_dependencies: dict[str, list[str]] = {}
+    external_sources: dict[str, list[str]] = {}
+
+    for entry in algorithm_entries:
+        algorithm = str(entry["name"])
+        local_dependencies: list[str] = []
+        local_external_sources: list[str] = []
+        for block in entry.get("inherit", []):
+            source_algorithm = str(block["from"])
+            if source_algorithm in manifest_algorithms:
+                local_dependencies.append(source_algorithm)
+            else:
+                local_external_sources.append(source_algorithm)
+        manifest_dependencies[algorithm] = local_dependencies
+        external_sources[algorithm] = local_external_sources
+    return manifest_dependencies, external_sources
+
+
+def _validate_manifest_dag(manifest_dependencies: dict[str, list[str]]) -> None:
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def dfs(algorithm: str) -> None:
+        if algorithm in visited:
+            return
+        if algorithm in visiting:
+            raise ValueError(f"Manifest inherit graph contains a cycle involving {algorithm!r}.")
+        visiting.add(algorithm)
+        for parent in manifest_dependencies.get(algorithm, []):
+            dfs(parent)
+        visiting.remove(algorithm)
+        visited.add(algorithm)
+
+    for algorithm in manifest_dependencies:
+        dfs(algorithm)
+
+
+def _run_algorithm_study(
+    *,
+    algorithm_entry: dict[str, Any],
+    manifest_file: Path,
+    task_id: str,
+    task_spec: TaskSpec,
+    task_config: dict[str, Any],
+    suite_id: str,
+    suite_paths: SuitePaths,
+    resolved_seed: int,
+    show_child_output: bool,
+    progress_lock: threading.Lock,
+) -> dict[str, Any]:
+    algorithm = str(algorithm_entry["name"])
+    base_config_path = resolve_algorithm_base_config(
+        task_id=task_id,
+        algorithm_spec=algorithm_entry,
+        manifest_path=manifest_file,
+    )
+    base_config = load_json(base_config_path)
+    search_spec = dict(algorithm_entry.get("search", {}))
+    validate_search_spec(search_spec)
+    inherit_blocks = list(algorithm_entry.get("inherit", []))
+    inherited_configs = _resolve_inheritance(
+        studies_root=suite_paths.studies_root,
+        task_id=task_id,
+        algorithm=algorithm,
+        inherit_blocks=inherit_blocks,
+    )
+    target_trials = int(algorithm_entry["trials"])
+
+    task_study_dir = suite_paths.studies_root / task_id
+    task_study_dir.mkdir(parents=True, exist_ok=True)
+    storage_path = task_study_dir / f"{algorithm}.sqlite3"
+    study = optuna_lib.create_study(
+        study_name=f"{suite_id}_{task_id}_{algorithm}",
+        direction="maximize",
+        sampler=optuna_lib.samplers.TPESampler(seed=resolved_seed, multivariate=True),
+        storage=f"sqlite:///{storage_path}",
+        load_if_exists=True,
+    )
+
+    def objective(trial: optuna_lib.Trial) -> float:
+        effective_config = sample_algorithm_config(
+            trial,
+            base_config=base_config,
+            search_spec=search_spec,
+            task_config=task_config,
+        )
+        applied_inheritance = _apply_inheritance(
+            effective_config=effective_config,
+            inherit_blocks=inherit_blocks,
+            inherited_configs=inherited_configs,
+        )
+
+        trial.set_user_attr("effective_config_json", json.dumps(effective_config, sort_keys=True))
+        trial.set_user_attr("inherit_summary_json", json.dumps(applied_inheritance, sort_keys=True))
+
+        result = run_trial(
+            TrialRun(
+                suite_id=suite_id,
+                task_spec=task_spec,
+                algorithm=algorithm,
+                trial_number=trial.number,
+                seed=resolved_seed,
+                algorithm_config=effective_config,
+                task_config=task_config,
+                suite_paths=suite_paths,
+                show_child_output=show_child_output,
+            )
+        )
+        trial.set_user_attr("best_validation_mean", result.best_validation_mean)
+        trial.set_user_attr("best_checkpoint_test_mean", result.best_checkpoint_test_mean)
+        trial.set_user_attr("final_checkpoint_test_mean", result.final_checkpoint_test_mean)
+        trial.set_user_attr("convergence_episode_90pct", result.convergence_episode_90pct)
+        trial.set_user_attr("final_train_moving_average", result.final_train_moving_average)
+        trial.set_user_attr("reward_slope_last_window", result.reward_slope_last_window)
+        trial.set_user_attr("best_vs_final_drop", result.best_vs_final_drop)
+        trial.set_user_attr("train_return_std_last_100", result.train_return_std_last_100)
+        trial.set_user_attr("summary_path", result.summary_path)
+        trial.set_user_attr("run_output_dir", result.run_output_dir)
+        return result.objective_score
+
+    completed_before = _completed_trial_count(study)
+    remaining_trials = max(0, target_trials - completed_before)
+
+    def callback(active_study: optuna_lib.Study, finished_trial: optuna_lib.Trial) -> None:
+        completed_trials = [
+            trial for trial in active_study.trials if trial.state == optuna_lib.trial.TrialState.COMPLETE and trial.value is not None
+        ]
+        best_score = max((float(trial.value) for trial in completed_trials), default=None)
+        with progress_lock:
+            best_text = "n/a" if best_score is None else f"{best_score:.4f}"
+            last_text = "n/a" if finished_trial.value is None else f"{float(finished_trial.value):.4f}"
+            print(
+                f"[Optuna] {task_id}/{algorithm}: {len(completed_trials)}/{target_trials} complete, "
+                f"last={last_text}, best={best_text}, state={finished_trial.state.name}"
+            )
+
+    if remaining_trials > 0:
+        study.optimize(
+            objective,
+            n_trials=remaining_trials,
+            n_jobs=1,
+            catch=(RuntimeError, FileNotFoundError, json.JSONDecodeError, KeyError, ValueError),
+            show_progress_bar=False,
+            callbacks=[callback],
+        )
+
+    trial_rows = _trial_rows(study)
+    leaderboard = _completed_leaderboard(study)
+    write_csv(task_study_dir / f"{algorithm}_trials.csv", trial_rows)
+    write_csv(task_study_dir / f"{algorithm}_leaderboard.csv", leaderboard)
+    exports = _export_top_configs(
+        task_spec=task_spec,
+        algorithm=algorithm,
+        leaderboard=leaderboard,
+        suite_paths=suite_paths,
+    )
+    return {
+        "task": task_id,
+        "algorithm": algorithm,
+        "target_trials": int(target_trials),
+        "completed_trials": int(len(leaderboard)),
+        "base_config_path": str(base_config_path),
+        "leaderboard_path": str(task_study_dir / f"{algorithm}_leaderboard.csv"),
+        "exports": exports,
+        "inherit": inherit_blocks,
+    }
+
+
 def run_manifest(
     *,
     manifest_path: str | Path,
@@ -347,129 +524,78 @@ def run_manifest(
     task_study_dir = suite_paths.studies_root / task_id
     task_study_dir.mkdir(parents=True, exist_ok=True)
     progress_lock = threading.Lock()
-    study_results: list[dict[str, Any]] = []
-
-    for algorithm_entry in _algorithm_entries(manifest):
+    algorithm_entries = _algorithm_entries(manifest)
+    for algorithm_entry in algorithm_entries:
         algorithm = str(algorithm_entry["name"])
         if algorithm not in LEARNED_ALGORITHM_ORDER:
             raise ValueError(f"Optuna study only supports learned algorithms, got {algorithm!r}.")
+        validate_search_spec(dict(algorithm_entry.get("search", {})))
 
-        base_config_path = resolve_algorithm_base_config(
-            task_id=task_id,
-            algorithm_spec=algorithm_entry,
-            manifest_path=manifest_file,
-        )
-        base_config = load_json(base_config_path)
-        search_spec = dict(algorithm_entry.get("search", {}))
-        validate_search_spec(search_spec)
-        inherit_blocks = list(algorithm_entry.get("inherit", []))
-        inherited_configs = _resolve_inheritance(
-            studies_root=suite_paths.studies_root,
-            task_id=task_id,
-            algorithm=algorithm,
-            inherit_blocks=inherit_blocks,
-        )
-        target_trials = int(algorithm_entry["trials"])
+    manifest_dependencies, _ = _manifest_dependencies(algorithm_entries)
+    _validate_manifest_dag(manifest_dependencies)
 
-        storage_path = task_study_dir / f"{algorithm}.sqlite3"
-        study = optuna_lib.create_study(
-            study_name=f"{suite_id}_{task_id}_{algorithm}",
-            direction="maximize",
-            sampler=optuna_lib.samplers.TPESampler(seed=resolved_seed, multivariate=True),
-            storage=f"sqlite:///{storage_path}",
-            load_if_exists=True,
-        )
+    pending_dependencies = {
+        str(entry["name"]): set(manifest_dependencies[str(entry["name"])])
+        for entry in algorithm_entries
+    }
+    children_by_parent: dict[str, list[str]] = {str(entry["name"]): [] for entry in algorithm_entries}
+    for algorithm, parents in manifest_dependencies.items():
+        for parent in parents:
+            children_by_parent[parent].append(algorithm)
 
-        def objective(trial: optuna_lib.Trial) -> float:
-            effective_config = sample_algorithm_config(
-                trial,
-                base_config=base_config,
-                search_spec=search_spec,
+    entry_by_algorithm = {str(entry["name"]): entry for entry in algorithm_entries}
+    ready_algorithms = [str(entry["name"]) for entry in algorithm_entries if not pending_dependencies[str(entry["name"])]]
+    ready_set = set(ready_algorithms)
+    running_futures: dict[Future[dict[str, Any]], str] = {}
+    completed_algorithms: set[str] = set()
+    failed_algorithms: dict[str, str] = {}
+    results_by_algorithm: dict[str, dict[str, Any]] = {}
+
+    def submit_ready_work(executor: ThreadPoolExecutor) -> None:
+        while ready_algorithms and len(running_futures) < max(1, int(parallel_jobs)):
+            algorithm = ready_algorithms.pop(0)
+            ready_set.remove(algorithm)
+            future = executor.submit(
+                _run_algorithm_study,
+                algorithm_entry=entry_by_algorithm[algorithm],
+                manifest_file=manifest_file,
+                task_id=task_id,
+                task_spec=task_spec,
+                task_config=task_config,
+                suite_id=suite_id,
+                suite_paths=suite_paths,
+                resolved_seed=resolved_seed,
+                show_child_output=show_child_output,
+                progress_lock=progress_lock,
             )
-            applied_inheritance = _apply_inheritance(
-                effective_config=effective_config,
-                inherit_blocks=inherit_blocks,
-                inherited_configs=inherited_configs,
-            )
+            running_futures[future] = algorithm
 
-            trial.set_user_attr("effective_config_json", json.dumps(effective_config, sort_keys=True))
-            trial.set_user_attr("inherit_summary_json", json.dumps(applied_inheritance, sort_keys=True))
+    with ThreadPoolExecutor(max_workers=max(1, int(parallel_jobs))) as executor:
+        submit_ready_work(executor)
+        while running_futures:
+            done_futures, _ = wait(tuple(running_futures.keys()), return_when=FIRST_COMPLETED)
+            for future in done_futures:
+                algorithm = running_futures.pop(future)
+                try:
+                    results_by_algorithm[algorithm] = future.result()
+                    completed_algorithms.add(algorithm)
+                    for child in children_by_parent.get(algorithm, []):
+                        child_dependencies = pending_dependencies[child]
+                        child_dependencies.discard(algorithm)
+                        if not child_dependencies and child not in completed_algorithms and child not in ready_set:
+                            ready_algorithms.append(child)
+                            ready_set.add(child)
+                except Exception as exc:
+                    failed_algorithms[algorithm] = f"{type(exc).__name__}: {exc}"
+            if failed_algorithms:
+                continue
+            submit_ready_work(executor)
 
-            result = run_trial(
-                TrialRun(
-                    suite_id=suite_id,
-                    task_spec=task_spec,
-                    algorithm=algorithm,
-                    trial_number=trial.number,
-                    seed=resolved_seed,
-                    algorithm_config=effective_config,
-                    task_config=task_config,
-                    suite_paths=suite_paths,
-                    show_child_output=show_child_output,
-                )
-            )
-            trial.set_user_attr("best_validation_mean", result.best_validation_mean)
-            trial.set_user_attr("best_checkpoint_test_mean", result.best_checkpoint_test_mean)
-            trial.set_user_attr("final_checkpoint_test_mean", result.final_checkpoint_test_mean)
-            trial.set_user_attr("convergence_episode_90pct", result.convergence_episode_90pct)
-            trial.set_user_attr("final_train_moving_average", result.final_train_moving_average)
-            trial.set_user_attr("reward_slope_last_window", result.reward_slope_last_window)
-            trial.set_user_attr("best_vs_final_drop", result.best_vs_final_drop)
-            trial.set_user_attr("train_return_std_last_100", result.train_return_std_last_100)
-            trial.set_user_attr("summary_path", result.summary_path)
-            trial.set_user_attr("run_output_dir", result.run_output_dir)
-            return result.objective_score
+    if failed_algorithms:
+        failure_messages = "; ".join(f"{algorithm}: {message}" for algorithm, message in failed_algorithms.items())
+        raise RuntimeError(f"Optuna manifest failed before all dependencies completed: {failure_messages}")
 
-        completed_before = sum(
-            1 for trial in study.trials if trial.state == optuna_lib.trial.TrialState.COMPLETE and trial.value is not None
-        )
-        remaining_trials = max(0, target_trials - completed_before)
-
-        def callback(active_study: optuna_lib.Study, finished_trial: optuna_lib.Trial) -> None:
-            completed_trials = [
-                trial for trial in active_study.trials if trial.state == optuna_lib.trial.TrialState.COMPLETE and trial.value is not None
-            ]
-            best_score = max((float(trial.value) for trial in completed_trials), default=None)
-            with progress_lock:
-                best_text = "n/a" if best_score is None else f"{best_score:.4f}"
-                last_text = "n/a" if finished_trial.value is None else f"{float(finished_trial.value):.4f}"
-                print(
-                    f"[Optuna] {task_id}/{algorithm}: {len(completed_trials)}/{target_trials} complete, "
-                    f"last={last_text}, best={best_text}, state={finished_trial.state.name}"
-                )
-
-        if remaining_trials > 0:
-            study.optimize(
-                objective,
-                n_trials=remaining_trials,
-                n_jobs=int(parallel_jobs),
-                catch=(RuntimeError, FileNotFoundError, json.JSONDecodeError, KeyError, ValueError),
-                show_progress_bar=False,
-                callbacks=[callback],
-            )
-
-        trial_rows = _trial_rows(study)
-        leaderboard = _completed_leaderboard(study)
-        write_csv(task_study_dir / f"{algorithm}_trials.csv", trial_rows)
-        write_csv(task_study_dir / f"{algorithm}_leaderboard.csv", leaderboard)
-        exports = _export_top_configs(
-            task_spec=task_spec,
-            algorithm=algorithm,
-            leaderboard=leaderboard,
-            suite_paths=suite_paths,
-        )
-        study_results.append(
-            {
-                "task": task_id,
-                "algorithm": algorithm,
-                "target_trials": int(target_trials),
-                "completed_trials": int(len(leaderboard)),
-                "base_config_path": str(base_config_path),
-                "leaderboard_path": str(task_study_dir / f"{algorithm}_leaderboard.csv"),
-                "exports": exports,
-                "inherit": inherit_blocks,
-            }
-        )
+    study_results = [results_by_algorithm[str(entry["name"])] for entry in algorithm_entries]
 
     summary = {
         "suite_id": suite_id,
@@ -492,8 +618,11 @@ def build_dry_run(manifest_path: str | Path, *, suite_id: str, results_root: Pat
     task_spec = get_task_spec(task_id)
     task_config = dict(load_json(task_spec.task_config))
     task_config.update(dict(manifest.get("task_overrides", {})))
+    algorithm_entries = _algorithm_entries(manifest)
+    manifest_dependencies, external_sources = _manifest_dependencies(algorithm_entries)
+    _validate_manifest_dag(manifest_dependencies)
     algorithm_data: dict[str, Any] = {}
-    for algorithm_entry in _algorithm_entries(manifest):
+    for algorithm_entry in algorithm_entries:
         algorithm = str(algorithm_entry["name"])
         validate_search_spec(dict(algorithm_entry.get("search", {})))
         algorithm_data[algorithm] = {
@@ -507,6 +636,8 @@ def build_dry_run(manifest_path: str | Path, *, suite_id: str, results_root: Pat
             ),
             "search_keys": list(dict(algorithm_entry.get("search", {})).keys()),
             "inherit": list(algorithm_entry.get("inherit", [])),
+            "manifest_dependencies": list(manifest_dependencies[algorithm]),
+            "external_inherit_sources": list(external_sources[algorithm]),
         }
     return {
         "suite_id": suite_id,

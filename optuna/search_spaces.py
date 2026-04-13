@@ -7,6 +7,7 @@ those numbers. There are no task-specific profiles in this file anymore.
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
 
@@ -110,11 +111,42 @@ def validate_search_spec(search_spec: dict[str, Any]) -> None:
             raise ValueError(f"Search parameter {name!r} length_target must be a string.")
 
 
-def sample_algorithm_config(trial, *, base_config: dict[str, Any], search_spec: dict[str, Any]) -> dict[str, Any]:
+def _resolve_episode_horizon(task_config: dict[str, Any]) -> int:
+    if "max_steps" in task_config:
+        return max(1, int(task_config["max_steps"]))
+    if "max_cycles" in task_config:
+        return max(1, int(task_config["max_cycles"]))
+    raise ValueError("Task config must define either 'max_steps' or 'max_cycles' for budget-normalized decay.")
+
+
+def _apply_budget_normalized_aliases(config: dict[str, Any], *, task_config: dict[str, Any]) -> None:
+    if "temp_gap_fraction_at_budget" not in config:
+        return
+
+    final_gap_fraction = float(config.pop("temp_gap_fraction_at_budget"))
+    if not (0.0 < final_gap_fraction <= 1.0):
+        raise ValueError("temp_gap_fraction_at_budget must be in (0, 1].")
+
+    total_env_steps = int(task_config["episodes"]) * _resolve_episode_horizon(task_config)
+    learning_starts = max(0, int(config.get("learning_starts", 0)))
+    learn_every_steps = max(1, int(config.get("learn_every_steps", 1)))
+    estimated_updates = max(1, math.floor(max(0, total_env_steps - learning_starts) / learn_every_steps))
+    config["temp_decay"] = float(final_gap_fraction ** (1.0 / estimated_updates))
+
+
+def sample_algorithm_config(
+    trial,
+    *,
+    base_config: dict[str, Any],
+    search_spec: dict[str, Any],
+    task_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Sample one full effective config from a base config and a JSON search spec."""
     validate_search_spec(search_spec)
     config = json.loads(json.dumps(base_config))
     for name, param_spec in search_spec.items():
         value = _suggest_value(trial, name, param_spec)
         _assign_value(config, name=str(name), value=value, param_spec=param_spec)
+    if task_config is not None:
+        _apply_budget_normalized_aliases(config, task_config=task_config)
     return config

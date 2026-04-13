@@ -110,13 +110,25 @@ Example:
 When `study.py` reaches that block, it loads the best completed parent configs from the same suite
 and copies the listed keys after local sampling.
 
-The current intended PIMAC ladder is:
+### Execution semantics
 
+- `parallel-jobs` means max concurrent algorithm studies inside one manifest DAG.
+- Each algorithm study still runs Optuna trials sequentially with `n_jobs=1`.
+- Root algorithms can run together, and chained children wait for their parents.
+- If one algorithm study fails, newly unblocked dependents are not launched.
+
+The current maintained ladders are:
+
+- `ippo` root
+- `mappo` from `ippo`
 - `pimac_v0` from `mappo`
 - `pimac_v1` from `pimac_v0`
 - `pimac_v2` from `pimac_v1`
 - `pimac_v3` from `pimac_v2`
 - `pimac_v4` from `pimac_v3`
+- `iql` root
+- `vdn` from `iql`
+- `qmix` from `iql`
 
 Inside each inherit block:
 
@@ -125,6 +137,20 @@ Inside each inherit block:
 - `required`: optional, defaults to `true`.
   - if `true`, the study fails when the parent result does not exist yet.
   - if `false`, the study continues without that inheritance source.
+
+### Active sweep protocol
+
+Active full manifests now use the cheaper sweep path:
+
+- `task_overrides.eval_every_episodes=0`
+- no during-training checkpoint selection
+- one held-out evaluation of the final checkpoint only
+- `summary["test"]["objective_score"]` becomes that final held-out score
+
+For these sweep runs, only `final_checkpoint.pt` is written.
+The held-out sweep split still comes from the task `test_*` fields, so it is a selection split rather than an untouched final test split.
+
+Value-based manifests can also use `temp_gap_fraction_at_budget`, which `search_spaces.py` converts into raw `temp_decay` with an approximate update-budget normalization.
 
 ### Template file
 
@@ -168,7 +194,7 @@ venv/bin/python optuna/full_sweep.py \
   --parallel-jobs 4
 ```
 
-6. Compare the best checkpoints from one finished suite:
+6. Compare the selected checkpoints from one finished suite:
 
 ```bash
 venv/bin/python optuna/analyze.py compare \
@@ -205,5 +231,5 @@ The normal flow is:
 
 - dry-run a manifest,
 - run the study,
-- compare the best checkpoints,
+- compare the selected checkpoints,
 - then optionally export the best configs and run coordination or video analysis.

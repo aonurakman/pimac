@@ -15,7 +15,7 @@ import matplotlib
 import numpy as np
 
 from algorithms.base import ParallelEnvSpec
-from utils import moving_average, ordered_scalar_metric_keys, save_gif
+from utils import grouped_dashboard_metric_keys, moving_average, plot_dashboard_metric_group, save_gif
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -327,8 +327,21 @@ def build_summary(
     logged_validation_summary = _validation_summary(task_config, validation_results)
     eligible_validation_results = filter_selection_eligible_results(task_config, validation_results, curriculum_windows)
     filtered_validation_summary = _validation_summary(task_config, eligible_validation_results)
-    best_test_summary = grouped_eval_metrics(task_config, best_checkpoint_test_results)
     final_test_summary = grouped_eval_metrics(task_config, final_checkpoint_test_results)
+    uses_validation_selection = bool(validation_results)
+    test_summary = {
+        "final_checkpoint": final_test_summary,
+        "objective_score": float(final_test_summary["overall_eval_mean"]),
+        "best_vs_final_drop": 0.0,
+    }
+    if uses_validation_selection:
+        best_test_summary = grouped_eval_metrics(task_config, best_checkpoint_test_results)
+        test_summary = {
+            "best_checkpoint": best_test_summary,
+            "final_checkpoint": final_test_summary,
+            "objective_score": float(0.7 * best_test_summary["overall_eval_mean"] + 0.3 * final_test_summary["overall_eval_mean"]),
+            "best_vs_final_drop": float(best_test_summary["overall_eval_mean"] - final_test_summary["overall_eval_mean"]),
+        }
 
     return {
         "env_name": str(task_config["env_name"]),
@@ -363,12 +376,7 @@ def build_summary(
             ),
         },
         "validation": filtered_validation_summary,
-        "test": {
-            "best_checkpoint": best_test_summary,
-            "final_checkpoint": final_test_summary,
-            "objective_score": float(0.7 * best_test_summary["overall_eval_mean"] + 0.3 * final_test_summary["overall_eval_mean"]),
-            "best_vs_final_drop": float(best_test_summary["overall_eval_mean"] - final_test_summary["overall_eval_mean"]),
-        },
+        "test": test_summary,
         "checkpoint_selection": {
             "selection_stage_index": int(task_config["checkpoint_selection_stage_index"]),
             "selection_start_episode": validation_selection_start_episode(task_config, curriculum_windows),
@@ -410,7 +418,9 @@ def plot_training_dashboard(
         for checkpoint in eval_checkpoints
     }
 
-    fig, axes = plt.subplots(3, 1, figsize=(13, 13))
+    metric_groups = grouped_dashboard_metric_keys(update_history)
+    fig_rows = 2 + len(metric_groups) if metric_groups else 3
+    fig, axes = plt.subplots(fig_rows, 1, figsize=(13, 4 * fig_rows))
     axes[0].plot(episodes, rewards, alpha=0.30, color="tab:blue", label="train return")
     reward_ma = moving_average(rewards, min(100, max(1, rewards.size))) if rewards.size else np.asarray([], dtype=np.float32)
     if reward_ma.size:
@@ -439,14 +449,13 @@ def plot_training_dashboard(
             axes[1].plot(x, large, marker="d", linewidth=1.2, label=f"large {large_counts[0]}..{large_counts[-1]}")
     axes[1].set_ylabel("Policy eval return")
     axes[1].grid(True, alpha=0.3)
-    axes[1].legend()
+    if grouped_by_checkpoint:
+        axes[1].legend()
 
-    scalar_keys = ordered_scalar_metric_keys(update_history)
-    for key in scalar_keys:
-        values = np.asarray([float(entry.get(key, 0.0)) for entry in update_history], dtype=np.float32)
-        axes[2].plot(np.arange(1, values.size + 1), values, linewidth=1.1, alpha=0.85, label=key)
-    if scalar_keys:
-        axes[2].legend(ncol=2, fontsize=8)
+    if metric_groups:
+        for axis, (title, metric_keys) in zip(axes[2:], metric_groups):
+            plot_dashboard_metric_group(axis, update_history, title=title, metric_keys=metric_keys)
+        axes[-1].set_xlabel("Update")
     else:
         axes[2].plot(episodes, losses, alpha=0.30, color="tab:red", label="episode mean loss")
         loss_ma = moving_average(losses, min(100, max(1, losses.size))) if losses.size else np.asarray([], dtype=np.float32)
@@ -454,9 +463,9 @@ def plot_training_dashboard(
             loss_ma_x = np.arange(losses.size - loss_ma.size + 1, losses.size + 1)
             axes[2].plot(loss_ma_x, loss_ma, color="tab:purple", linewidth=2.0, label="moving avg")
         axes[2].legend()
-    axes[2].set_xlabel("Episode / update")
-    axes[2].set_ylabel("Optimization diagnostics")
-    axes[2].grid(True, alpha=0.3)
+        axes[2].set_xlabel("Episode")
+        axes[2].set_ylabel("Episode loss")
+        axes[2].grid(True, alpha=0.3)
 
     fig.tight_layout()
     fig.savefig(save_path, dpi=150)
