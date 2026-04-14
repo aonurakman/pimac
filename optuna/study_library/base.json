@@ -3,9 +3,9 @@
   "notes": [
     "This file is a guide. study.py rejects it on purpose.",
     "Copy it to a new manifest, remove template=true, then trim it down to the study you want.",
-    "parallel-jobs now means max concurrent algorithm studies inside one manifest DAG.",
-    "Active sweep manifests disable during-training evaluation with eval_every_episodes=0 and rank configs by final held-out evaluation only.",
-    "The held-out split used inside sweeps still comes from the existing test_* task fields. Multi-seed confirmatory reruns stay manual."
+    "parallel-jobs means max concurrent algorithm studies inside one manifest DAG.",
+    "The maintained inheritance shape is: ippo -> mappo -> pimac_v0, ippo -> mappo -> pimac_v1, pimac_v1 -> {pimac_v2, pimac_v3, pimac_v4}, iql -> {vdn, qmix}.",
+    "Active sweep manifests should usually set eval_every_episodes=0 and use the final held-out checkpoint evaluation only."
   ],
   "task": "simple_spread_dynamic_hard",
   "seed": 42,
@@ -133,13 +133,33 @@
             5.0
           ]
         }
-      },
-      "note": "Example independent PPO search."
+      }
     },
     {
       "name": "mappo",
       "trials": 12,
       "base_config": "simple_spread_dynamic_hard/configs/mappo/default.json",
+      "inherit": [
+        {
+          "from": "ippo",
+          "keys": [
+            "lr",
+            "batch_size",
+            "update_every_episodes",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm"
+          ],
+          "required": true
+        }
+      ],
       "search": {
         "critic_hidden_sizes": {
           "type": "categorical",
@@ -168,11 +188,15 @@
             ]
           ]
         }
-      },
-      "note": "Example PPO-style centralized-critic search.",
+      }
+    },
+    {
+      "name": "pimac_v0",
+      "trials": 8,
+      "base_config": "simple_spread_dynamic_hard/configs/pimac_v0/default.json",
       "inherit": [
         {
-          "from": "ippo",
+          "from": "mappo",
           "keys": [
             "lr",
             "batch_size",
@@ -190,12 +214,7 @@
           ],
           "required": true
         }
-      ]
-    },
-    {
-      "name": "pimac_v0",
-      "trials": 8,
-      "base_config": "simple_spread_dynamic_hard/configs/pimac_v0/default.json",
+      ],
       "search": {
         "critic_hidden_sizes": {
           "type": "categorical",
@@ -250,7 +269,12 @@
             false
           ]
         }
-      },
+      }
+    },
+    {
+      "name": "pimac_v1",
+      "trials": 10,
+      "base_config": "simple_spread_dynamic_hard/configs/pimac_v1/default.json",
       "inherit": [
         {
           "from": "mappo",
@@ -272,13 +296,60 @@
           "required": true
         }
       ],
-      "note": "PIMAC v0 inherits the MAPPO backbone keys and tunes only set-critic structure."
-    },
-    {
-      "name": "pimac_v1",
-      "trials": 8,
-      "base_config": "simple_spread_dynamic_hard/configs/pimac_v1/default.json",
       "search": {
+        "critic_hidden_sizes": {
+          "type": "categorical",
+          "values": [
+            [
+              128,
+              128
+            ],
+            [
+              128,
+              128,
+              128
+            ],
+            [
+              160,
+              128
+            ],
+            [
+              160,
+              160
+            ]
+          ]
+        },
+        "set_embed_dim": {
+          "type": "categorical",
+          "values": [
+            128,
+            160
+          ]
+        },
+        "set_encoder_hidden_sizes": {
+          "type": "categorical",
+          "values": [
+            [
+              128,
+              96
+            ],
+            [
+              128,
+              128
+            ],
+            [
+              160,
+              96
+            ]
+          ]
+        },
+        "include_team_size_feature": {
+          "type": "categorical",
+          "values": [
+            true,
+            false
+          ]
+        },
         "num_tokens": {
           "type": "categorical",
           "values": [
@@ -289,7 +360,7 @@
         },
         "distill_weight": {
           "type": "float",
-          "low": 5e-05,
+          "low": 0.00005,
           "high": 0.001,
           "log": true
         },
@@ -344,10 +415,15 @@
             "ctx_logvar_max"
           ]
         }
-      },
+      }
+    },
+    {
+      "name": "pimac_v2",
+      "trials": 10,
+      "base_config": "simple_spread_dynamic_hard/configs/pimac_v2/default.json",
       "inherit": [
         {
-          "from": "pimac_v0",
+          "from": "pimac_v1",
           "keys": [
             "lr",
             "batch_size",
@@ -365,17 +441,12 @@
             "critic_hidden_sizes",
             "set_embed_dim",
             "set_encoder_hidden_sizes",
-            "include_team_size_feature"
+            "include_team_size_feature",
+            "num_tokens"
           ],
           "required": true
         }
       ],
-      "note": "Shows a PIMAC v1 study with token count, distillation, and optional ctx logvar bounds."
-    },
-    {
-      "name": "pimac_v2",
-      "trials": 8,
-      "base_config": "simple_spread_dynamic_hard/configs/pimac_v2/default.json",
       "search": {
         "distill_weight": {
           "type": "float",
@@ -435,7 +506,12 @@
             "ctx_logvar_max"
           ]
         }
-      },
+      }
+    },
+    {
+      "name": "pimac_v3",
+      "trials": 10,
+      "base_config": "simple_spread_dynamic_hard/configs/pimac_v3/default.json",
       "inherit": [
         {
           "from": "pimac_v1",
@@ -462,16 +538,10 @@
           "required": true
         }
       ],
-      "note": "Shows target assignment through ctx_logvar_bounds -> ctx_logvar_min/max."
-    },
-    {
-      "name": "pimac_v3",
-      "trials": 8,
-      "base_config": "simple_spread_dynamic_hard/configs/pimac_v3/default.json",
       "search": {
         "distill_weight": {
           "type": "float",
-          "low": 8e-05,
+          "low": 0.00008,
           "high": 0.0008,
           "log": true
         },
@@ -491,6 +561,39 @@
             0.005,
             0.01,
             0.02
+          ]
+        },
+        "ctx_logvar_bounds": {
+          "type": "categorical",
+          "values": [
+            [
+              -0.5,
+              1.0
+            ],
+            [
+              -0.5,
+              0.75
+            ],
+            [
+              -0.5,
+              0.5
+            ],
+            [
+              -0.25,
+              0.75
+            ],
+            [
+              -0.25,
+              0.5
+            ],
+            [
+              0.0,
+              0.5
+            ]
+          ],
+          "targets": [
+            "ctx_logvar_min",
+            "ctx_logvar_max"
           ]
         },
         "hypernet_rank": {
@@ -536,45 +639,42 @@
           "high": 0.0015,
           "log": true
         }
-      },
-      "inherit": [
-        {
-          "from": "pimac_v2",
-          "keys": [
-            "lr",
-            "batch_size",
-            "update_every_episodes",
-            "num_epochs",
-            "num_hidden",
-            "widths",
-            "rnn_hidden_dim",
-            "clip_eps",
-            "gamma",
-            "gae_lambda",
-            "entropy_coef",
-            "value_coef",
-            "max_grad_norm",
-            "critic_hidden_sizes",
-            "set_embed_dim",
-            "set_encoder_hidden_sizes",
-            "include_team_size_feature",
-            "num_tokens",
-            "ctx_logvar_min",
-            "ctx_logvar_max"
-          ],
-          "required": true
-        }
-      ],
-      "note": "Shows the head-only hypernet study on top of the v2 inheritance chain."
+      }
     },
     {
       "name": "pimac_v4",
-      "trials": 8,
+      "trials": 10,
       "base_config": "simple_spread_dynamic_hard/configs/pimac_v4/default.json",
+      "inherit": [
+        {
+          "from": "pimac_v1",
+          "keys": [
+            "lr",
+            "batch_size",
+            "update_every_episodes",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm",
+            "critic_hidden_sizes",
+            "set_embed_dim",
+            "set_encoder_hidden_sizes",
+            "include_team_size_feature",
+            "num_tokens"
+          ],
+          "required": true
+        }
+      ],
       "search": {
         "distill_weight": {
           "type": "float",
-          "low": 8e-05,
+          "low": 0.00008,
           "high": 0.0008,
           "log": true
         },
@@ -594,6 +694,39 @@
             0.005,
             0.01,
             0.02
+          ]
+        },
+        "ctx_logvar_bounds": {
+          "type": "categorical",
+          "values": [
+            [
+              -0.5,
+              1.0
+            ],
+            [
+              -0.5,
+              0.75
+            ],
+            [
+              -0.5,
+              0.5
+            ],
+            [
+              -0.25,
+              0.75
+            ],
+            [
+              -0.25,
+              0.5
+            ],
+            [
+              0.0,
+              0.5
+            ]
+          ],
+          "targets": [
+            "ctx_logvar_min",
+            "ctx_logvar_max"
           ]
         },
         "hypernet_rank": {
@@ -639,36 +772,7 @@
           "high": 0.0015,
           "log": true
         }
-      },
-      "inherit": [
-        {
-          "from": "pimac_v3",
-          "keys": [
-            "lr",
-            "batch_size",
-            "update_every_episodes",
-            "num_epochs",
-            "num_hidden",
-            "widths",
-            "rnn_hidden_dim",
-            "clip_eps",
-            "gamma",
-            "gae_lambda",
-            "entropy_coef",
-            "value_coef",
-            "max_grad_norm",
-            "critic_hidden_sizes",
-            "set_embed_dim",
-            "set_encoder_hidden_sizes",
-            "include_team_size_feature",
-            "num_tokens",
-            "ctx_logvar_min",
-            "ctx_logvar_max"
-          ],
-          "required": true
-        }
-      ],
-      "note": "Shows the FiLM-plus-head study inheriting the stabilized backbone from pimac_v3."
+      }
     },
     {
       "name": "iql",
@@ -808,34 +912,12 @@
             0.2
           ]
         }
-      },
-      "note": "Example value-learning search with dynamic-task temperatures."
+      }
     },
     {
       "name": "vdn",
       "trials": 8,
       "base_config": "simple_spread_dynamic_hard/configs/vdn/default.json",
-      "search": {
-        "double_q": {
-          "type": "categorical",
-          "values": [
-            true,
-            false
-          ]
-        },
-        "use_huber_loss": {
-          "type": "categorical",
-          "values": [
-            true,
-            false
-          ]
-        },
-        "share_parameters": {
-          "type": "constant",
-          "value": true
-        }
-      },
-      "note": "Example joint value-factorization search.",
       "inherit": [
         {
           "from": "iql",
@@ -857,12 +939,54 @@
           ],
           "required": true
         }
-      ]
+      ],
+      "search": {
+        "double_q": {
+          "type": "categorical",
+          "values": [
+            true,
+            false
+          ]
+        },
+        "use_huber_loss": {
+          "type": "categorical",
+          "values": [
+            true,
+            false
+          ]
+        },
+        "share_parameters": {
+          "type": "constant",
+          "value": true
+        }
+      }
     },
     {
       "name": "qmix",
       "trials": 8,
       "base_config": "simple_spread_dynamic_hard/configs/qmix/default.json",
+      "inherit": [
+        {
+          "from": "iql",
+          "keys": [
+            "lr",
+            "batch_size",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "gamma",
+            "target_update_every",
+            "tau",
+            "temp_init",
+            "temp_decay",
+            "temp_min",
+            "learn_every_steps",
+            "max_grad_norm"
+          ],
+          "required": true
+        }
+      ],
       "search": {
         "double_q": {
           "type": "categorical",
@@ -915,30 +1039,7 @@
           "type": "constant",
           "value": true
         }
-      },
-      "note": "Example QMIX search using mixing_widths + length_target.",
-      "inherit": [
-        {
-          "from": "iql",
-          "keys": [
-            "lr",
-            "batch_size",
-            "num_epochs",
-            "num_hidden",
-            "widths",
-            "rnn_hidden_dim",
-            "gamma",
-            "target_update_every",
-            "tau",
-            "temp_init",
-            "temp_decay",
-            "temp_min",
-            "learn_every_steps",
-            "max_grad_norm"
-          ],
-          "required": true
-        }
-      ]
+      }
     },
     {
       "name": "random",
@@ -950,8 +1051,7 @@
           "low": 0,
           "high": 1000
         }
-      },
-      "note": "Guide only. The study runner ignores random because sweeps are only defined for learned algorithms."
+      }
     }
   ]
 }

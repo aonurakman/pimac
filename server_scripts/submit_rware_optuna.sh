@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "" ]; then
-    echo "Usage: bash server_scripts/submit_rware_optuna.sh SUITE_ID [PARALLEL_JOBS]" >&2
+    echo "Usage: MANIFEST_PATH=/path/to/manifest.json bash server_scripts/submit_rware_optuna.sh SUITE_ID [PARALLEL_JOBS]" >&2
     exit 1
 fi
 
@@ -18,7 +18,7 @@ QOS="${QOS:-big_bonk}"
 GRES="${GRES:-gpu:1}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-4}"
 MEM="${MEM:-64G}"
-JOB_NAME="${JOB_NAME:-rware_optuna}"
+JOB_NAME="${JOB_NAME:-optuna_study}"
 
 mkdir -p "${LOG_DIR}"
 

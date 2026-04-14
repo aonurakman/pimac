@@ -6,7 +6,7 @@ PARALLEL_JOBS="${2:-1}"
 
 REPO_ROOT="${SLURM_SUBMIT_DIR:-${PWD}}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
-MANIFEST_PATH="${MANIFEST_PATH:-${REPO_ROOT}/optuna/study_library/rware_full.json}"
+MANIFEST_PATH="${MANIFEST_PATH:-}"
 
 echo "Job started on $(hostname)"
 echo "Repository: ${REPO_ROOT}"
@@ -22,6 +22,16 @@ fi
 if [ ! -f "${REPO_ROOT}/requirements.txt" ]; then
     echo "requirements.txt not found under ${REPO_ROOT}" >&2
     echo "Submit the job from the repo root or keep sbatch --chdir pointed at the repo root." >&2
+    exit 1
+fi
+
+if [ -z "${MANIFEST_PATH}" ]; then
+    echo "MANIFEST_PATH is required. Point it at a copied runnable study manifest." >&2
+    exit 1
+fi
+
+if [ ! -f "${MANIFEST_PATH}" ]; then
+    echo "Manifest not found: ${MANIFEST_PATH}" >&2
     exit 1
 fi
 

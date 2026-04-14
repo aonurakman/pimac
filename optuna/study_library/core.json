@@ -1,3 +1,0 @@
-{
-  "manifests": ["optuna/study_library/fixed_full.json", "optuna/study_library/dynamic_full.json", "optuna/study_library/hard_full.json", "optuna/study_library/toy_full.json"]
-}
