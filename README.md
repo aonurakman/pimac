@@ -5,7 +5,7 @@ A small research repo for the PIMAC family and its benchmark tasks.
 ## Structure
 
 - `algorithms/`: all benchmark learners in one place.
-- `simple_spread/`, `simple_spread_dynamic/`, `simple_spread_dynamic_hard/`, `robotic_warehouse_dynamic/`, `toy_env/`: one task directory per environment.
+- `simple_spread/`, `simple_spread_dynamic/`, `simple_spread_dynamic_hard/`, `robotic_warehouse_dynamic/`, `level_based_foraging_dynamic/`, `toy_env/`: one task directory per environment.
   - `run.py`: the full task script.
   - `task.json`: default task settings.
   - `configs/`: runnable algorithm configs.
@@ -14,7 +14,7 @@ A small research repo for the PIMAC family and its benchmark tasks.
   - `study.py`: run one study manifest.
   - `full_sweep.py`: run several manifests in sequence.
   - `analyze.py`: merge, compare, coordination, videos, export-best.
-  - `study_library/`: explicit study manifests.
+  - `study_library/`: the committed `base.json` template for future studies.
   - `README.md`: manifest format and chaining notes.
 - `utils.py`: small shared helpers.
 - `results/`: normal run outputs.
@@ -51,6 +51,8 @@ All learned algorithms use the same benchmark interface:
 
 `ParallelTransition` uses `active_agent_mask_dict` and `next_active_agent_mask_dict` for joint learners. This repo does not use legal-action masks.
 For `ippo`, `mappo`, and the `pimac_*` variants, evaluation mode keeps stochastic policy sampling and only switches modules to eval mode.
+The simple-spread task family now uses one fully cooperative shared reward: landmark coverage plus a global collision penalty counted once per colliding pair.
+In `pimac_v1` through `pimac_v4`, the centralized value critic consumes concatenated coordination tokens rather than mean-pooling them before the value head.
 
 ## Running one task
 
@@ -59,7 +61,7 @@ Every task uses the same CLI shape:
 ```bash
 venv/bin/python simple_spread_dynamic_hard/run.py \
   --algorithm pimac_v2 \
-  --alg-config simple_spread_dynamic_hard/configs/pimac_v2/best_01.json
+  --alg-config simple_spread_dynamic_hard/configs/pimac_v2/default.json
 ```
 
 Useful flags:
@@ -75,24 +77,30 @@ Useful flags:
 
 Each task directory keeps:
 
-- `configs/manifest.csv`: the exported best configs we want to keep
-- `configs/<algorithm>/best_01.json` ... `best_05.json`: top runnable configs
+- `configs/manifest.csv`: the retained archived configs we currently want to keep
 - `configs/<algorithm>/default.json`: the plain default starting point for studies
-- `findings.md`: what earlier sweeps showed, what transferred, and what failed
+- `findings.md`: the current interpretation note for that task
 
-New tasks may start with only `default.json` files plus a minimal random baseline in `manifest.csv`
-until real archived sweeps exist. The manifest should stay honest about what is actually ranked.
+Right now this repo has been reset to a fresh sweep state, so the tasks only keep `default.json` files
+plus a minimal random baseline in `manifest.csv`. Add `best_*.json` files back only after fresh sweeps
+are actually run and exported. The manifest should stay honest about what is actually ranked.
 
-This repo keeps only the reusable configs and written findings, not the full bulk of historical sweep outputs.
+This repo keeps only the reusable configs and written findings, not the full bulk of sweep outputs.
 
 ## Optuna workflow
 
-Run one study manifest:
+Create a study manifest by copying the template first:
+
+```bash
+cp optuna/study_library/base.json optuna/study_library/my_hard_study.json
+```
+
+Then remove `"template": true`, trim it down, and run it:
 
 ```bash
 venv/bin/python optuna/study.py \
-  --manifest optuna/study_library/hard_full.json \
-  --suite-id hard_full_01 \
+  --manifest optuna/study_library/my_hard_study.json \
+  --suite-id hard_study_01 \
   --parallel-jobs 3
 ```
 
@@ -105,20 +113,13 @@ Active sweep semantics:
 - Active sweep manifests set `eval_every_episodes=0`.
 - In that mode, the sweep objective is one held-out final-checkpoint evaluation only.
 - The held-out sweep split still uses the task `test_*` fields for simplicity.
-
-Run a library of manifests:
-
-```bash
-venv/bin/python optuna/full_sweep.py \
-  --suite-id core_benchmarks_01 \
-  --library optuna/study_library/core.json
-```
+- `level_based_foraging_dynamic` uses team return as its task KPI; other tasks keep mean-agent episode return.
 
 Compare the selected checkpoints from a suite:
 
 ```bash
 venv/bin/python optuna/analyze.py compare \
-  --suite-id hard_full_01 \
+  --suite-id hard_study_01 \
   --task simple_spread_dynamic_hard
 ```
 
