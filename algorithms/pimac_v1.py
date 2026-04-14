@@ -307,7 +307,7 @@ class SetValueCritic(nn.Module):
     Centralized critic with tokenized team context.
 
     The teacher produces coordination tokens and per-agent context. Team value is
-    predicted from pooled tokens via `rho`. A small per-agent head predicts a
+    predicted from concatenated coordination tokens via `rho`. A small per-agent head predicts a
     counterfactual value estimate from teacher context.
     """
 
@@ -331,9 +331,9 @@ class SetValueCritic(nn.Module):
             set_encoder_hidden_sizes=tuple(set_encoder_hidden_sizes),
         )
 
-        pooled_dim = self.set_embed_dim + (1 if self.include_team_size_feature else 0)
+        value_input_dim = int(num_tokens) * self.set_embed_dim + (1 if self.include_team_size_feature else 0)
         self.value_mlp = _build_mlp(
-            in_dim=pooled_dim,
+            in_dim=value_input_dim,
             hidden_sizes=tuple(critic_hidden_sizes),
             out_dim=1,
         )
@@ -357,7 +357,8 @@ class SetValueCritic(nn.Module):
             counterfactual_predictions: [B, T, N]
         """
         tokens, ctx_teacher = self.teacher(obs, active_mask)
-        team_context = tokens.mean(dim=2)
+        batch_size, num_timesteps, num_tokens, token_dim = tokens.shape
+        team_context = tokens.reshape(batch_size, num_timesteps, num_tokens * token_dim)
 
         if self.include_team_size_feature:
             active_count = active_mask.sum(dim=2, keepdim=True)
@@ -365,7 +366,7 @@ class SetValueCritic(nn.Module):
         else:
             value_input = team_context
 
-        batch_size, num_timesteps, context_dim = value_input.shape
+        _, _, context_dim = value_input.shape
         team_values = self.value_mlp(value_input.reshape(batch_size * num_timesteps, context_dim)).reshape(
             batch_size,
             num_timesteps,
