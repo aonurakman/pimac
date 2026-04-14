@@ -4,6 +4,7 @@
   "eval_every_episodes": 250,
   "frame_skip": 2,
   "gif_seed_offset": 200000,
+  "global_collision_coef": 1.0,
   "max_cycles": 25,
   "max_frames": 500,
   "min_improve": 0.001,

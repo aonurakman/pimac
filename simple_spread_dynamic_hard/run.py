@@ -20,6 +20,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from algorithms.base import ParallelEnvSpec, ParallelTransition
 from algorithms.registry import ALGORITHM_ORDER, get_algorithm_class
+from simple_spread_common import CooperativeSimpleSpreadRewardWrapper
 from simple_spread_dynamic_hard.utils import (
     ClosestEntityObservationWrapper,
     EvalResult,
@@ -66,12 +67,15 @@ def make_env(task_config: dict, seed: int, n_agents: int, render_mode: str | Non
 
     raw_env = simple_spread_v3.parallel_env(
         N=int(n_agents),
-        local_ratio=float(task_config["local_reward_ratio"]),
         max_cycles=int(task_config["max_cycles"]),
         continuous_actions=False,
         render_mode=render_mode,
     )
-    env = ClosestEntityObservationWrapper(raw_env, n_agents=int(n_agents), task_config=task_config)
+    cooperative_env = CooperativeSimpleSpreadRewardWrapper(
+        raw_env,
+        collision_coef=float(task_config["global_collision_coef"]),
+    )
+    env = ClosestEntityObservationWrapper(cooperative_env, n_agents=int(n_agents), task_config=task_config)
     env.reset(seed=seed)
     return env
 
