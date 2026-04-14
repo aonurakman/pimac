@@ -169,12 +169,18 @@ def save_update_history_csv(path: str | Path, update_history: Sequence[UpdateRep
     write_csv(path, flatten_update_history(update_history))
 
 
+def _coerce_metric_value(value: object) -> float:
+    if value is None:
+        return float("nan")
+    return float(value)
+
+
 def ordered_scalar_metric_keys(metric_history: Sequence[dict[str, float]] | None) -> list[str]:
     if not metric_history:
         return []
     scalar_keys: set[str] = set()
     for key in DEFAULT_DASHBOARD_METRIC_KEY_ORDER:
-        values = np.asarray([float(entry.get(key, np.nan)) for entry in metric_history], dtype=np.float32)
+        values = np.asarray([_coerce_metric_value(entry.get(key, np.nan)) for entry in metric_history], dtype=np.float32)
         if np.isfinite(values).any():
             scalar_keys.add(key)
     return [key for key in DEFAULT_DASHBOARD_METRIC_KEY_ORDER if key in scalar_keys]
@@ -200,7 +206,7 @@ def plot_dashboard_metric_group(
     metric_keys: Sequence[str],
 ) -> None:
     for metric_key in metric_keys:
-        values = np.asarray([float(row.get(metric_key, np.nan)) for row in metric_history], dtype=np.float32)
+        values = np.asarray([_coerce_metric_value(row.get(metric_key, np.nan)) for row in metric_history], dtype=np.float32)
         if np.isfinite(values).any():
             axis.plot(np.arange(1, values.size + 1), values, linewidth=1.2, alpha=0.90, label=metric_key)
     axis.set_ylabel(title)
