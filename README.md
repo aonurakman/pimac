@@ -113,7 +113,7 @@ Active sweep semantics:
 - Active sweep manifests set `eval_every_episodes=0`.
 - In that mode, the sweep objective is one held-out final-checkpoint evaluation only.
 - The held-out sweep split still uses the task `test_*` fields for simplicity.
-- `level_based_foraging_dynamic` uses team return as its task KPI; other tasks keep mean-agent episode return.
+- `level_based_foraging_dynamic` uses team return as its task KPI and also trains on a broadcast team-return reward; other tasks keep mean-agent episode return.
 
 Compare the selected checkpoints from a suite:
 

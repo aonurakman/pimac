@@ -247,6 +247,12 @@ def summarize_episode_return(total_reward_sum: float, agent_count: int) -> float
     return float(total_reward_sum)
 
 
+def cooperative_team_reward_dict(rewards: dict[str, float], agent_ids: list[str]) -> tuple[dict[str, float], float]:
+    """Broadcast one shared team-return reward across all active agents."""
+    step_team_reward = float(sum(float(rewards.get(agent_id, 0.0)) for agent_id in agent_ids))
+    return ({agent_id: step_team_reward for agent_id in agent_ids}, step_team_reward)
+
+
 # -----------------------------------------------------------------------------
 # Experiment loop
 # -----------------------------------------------------------------------------
@@ -318,6 +324,7 @@ def run_task(
                 actions = learner.act_parallel(obs_dict)
                 next_obs, rewards, terminations, truncations, _ = env.step(actions)
                 global_step += 1
+                cooperative_rewards, step_team_reward = cooperative_team_reward_dict(rewards, agent_ids)
 
                 done_dict = {
                     agent_id: bool(terminations.get(agent_id, False) or truncations.get(agent_id, False))
@@ -327,7 +334,7 @@ def run_task(
                 transition = ParallelTransition(
                     obs_dict=obs_dict,
                     action_dict=actions,
-                    reward_dict={agent_id: float(rewards.get(agent_id, 0.0)) for agent_id in agent_ids},
+                    reward_dict=cooperative_rewards,
                     next_obs_dict={
                         agent_id: pad_vector(np.asarray(next_obs[agent_id], dtype=np.float32), env_spec.obs_size)
                         for agent_id in next_active
@@ -342,7 +349,7 @@ def run_task(
                     learner_updates += 1
                     episode_reports.append(report.to_flat_dict())
 
-                total_reward += sum(float(rewards.get(agent_id, 0.0)) for agent_id in agent_ids)
+                total_reward += step_team_reward
                 observations = next_obs
                 done = done_dict
                 if all(done.values()):
