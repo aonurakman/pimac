@@ -65,7 +65,7 @@ PIMACV2_DEFAULT_CONFIG = {
     "critic_hidden_sizes": (128, 128),
     "set_embed_dim": 128,
     "set_encoder_hidden_sizes": (128, 128),
-    "include_team_size_feature": True,
+    "include_team_size_feature": False,
     "num_tokens": 4,
     "distill_weight": 0.1,
     "counterfactual_weight": 0.05,

@@ -59,7 +59,7 @@ PIMACV0_DEFAULT_CONFIG = {
     "critic_hidden_sizes": (128, 128),
     "set_embed_dim": 128,
     "set_encoder_hidden_sizes": (128, 128),
-    "include_team_size_feature": True,
+    "include_team_size_feature": False,
     "update_every_episodes": 1,
 }
 

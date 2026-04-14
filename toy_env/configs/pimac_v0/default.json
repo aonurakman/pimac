@@ -9,7 +9,7 @@
   "entropy_coef": 0.01,
   "gae_lambda": 0.95,
   "gamma": 0.99,
-  "include_team_size_feature": true,
+  "include_team_size_feature": false,
   "lr": 0.0003,
   "max_grad_norm": 10.0,
   "normalize_advantage": true,
