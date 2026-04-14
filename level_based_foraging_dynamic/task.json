@@ -1,0 +1,92 @@
+{
+  "checkpoint_selection_stage_index": 4,
+  "curriculum": [
+    {
+      "counts": [
+        2,
+        3
+      ],
+      "fraction": 0.2,
+      "name": "stage_1__2_3",
+      "weights": [
+        0.6,
+        0.4
+      ]
+    },
+    {
+      "counts": [
+        2,
+        3,
+        4
+      ],
+      "fraction": 0.25,
+      "name": "stage_2__2_3_4",
+      "weights": [
+        0.25,
+        0.35,
+        0.4
+      ]
+    },
+    {
+      "counts": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "fraction": 0.25,
+      "name": "stage_3__2_3_4_5",
+      "weights": [
+        0.15,
+        0.2,
+        0.25,
+        0.4
+      ]
+    },
+    {
+      "counts": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "fraction": 0.3,
+      "name": "stage_4__2_3_4_5",
+      "weights": [
+        0.08,
+        0.12,
+        0.2,
+        0.6
+      ]
+    }
+  ],
+  "env_id_template": "Foraging-2s-10x10-{n_agents}p-3f-coop-v3",
+  "env_name": "lbf_2s_10x10_3f_coop_v3_dynamic",
+  "episodes": 20000,
+  "eval_counts": [
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "eval_every_episodes": 250,
+  "frame_skip": 1,
+  "gif_seed_offset": 200000,
+  "max_agents": 6,
+  "max_episode_steps": 50,
+  "max_frames": 80,
+  "min_improve": 0.001,
+  "task_name": "level_based_foraging_dynamic",
+  "task_type": "dynamic_team",
+  "test_rollouts": 10,
+  "test_seed_offset": 20000,
+  "train_max_agents": 5,
+  "validation_rollouts": 5,
+  "validation_seed_offset": 10000,
+  "video_counts": [
+    2,
+    4,
+    6
+  ]
+}

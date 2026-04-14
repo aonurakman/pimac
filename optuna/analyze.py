@@ -100,6 +100,14 @@ def _transform_obs(task_script, env_spec, obs: np.ndarray) -> np.ndarray:
     return task_script.prepare_observation(obs, env_spec)
 
 
+def _summarize_episode_return(task_script, total_reward_sum: float, agent_count: int) -> float:
+    """Ask the task module how one episode return should be aggregated for reporting."""
+    summarize_fn = getattr(task_script, "summarize_episode_return", None)
+    if callable(summarize_fn):
+        return float(summarize_fn(total_reward_sum, agent_count))
+    return float(total_reward_sum / max(1, agent_count))
+
+
 def _task_is_dynamic(task_config: dict[str, Any]) -> bool:
     """Treat every dynamic-team variant as a dynamic task in Optuna analysis."""
     return str(task_config.get("task_type", "")).startswith("dynamic_team")
@@ -160,7 +168,7 @@ def _run_one_rollout(*, task_id: str, task_config: dict, task_script, env_spec, 
         if all(done.values()) or (frame_budget is not None and len(frames) >= int(frame_budget)):
             break
     env.close()
-    return float(total_reward / max(1, len(agent_ids))), frames
+    return _summarize_episode_return(task_script, total_reward, len(agent_ids)), frames
 
 
 def compare_selected_checkpoints(

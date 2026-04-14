@@ -84,6 +84,12 @@ TASK_SPECS: dict[str, TaskSpec] = {
         task_config=PROJECT_ROOT / "robotic_warehouse_dynamic" / "task.json",
         config_root=PROJECT_ROOT / "robotic_warehouse_dynamic" / "configs",
     ),
+    "level_based_foraging_dynamic": TaskSpec(
+        task_id="level_based_foraging_dynamic",
+        run_script=PROJECT_ROOT / "level_based_foraging_dynamic" / "run.py",
+        task_config=PROJECT_ROOT / "level_based_foraging_dynamic" / "task.json",
+        config_root=PROJECT_ROOT / "level_based_foraging_dynamic" / "configs",
+    ),
     "toy_env": TaskSpec(
         task_id="toy_env",
         run_script=PROJECT_ROOT / "toy_env" / "run.py",
