@@ -47,6 +47,7 @@ ALGORITHM_ORDER = (
     "pimac_v2",
     "pimac_v3",
     "pimac_v4",
+    "pimac_v5",
 )
 
 
