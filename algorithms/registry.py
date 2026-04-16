@@ -14,6 +14,7 @@ from algorithms.pimac_v1 import PIMACV1
 from algorithms.pimac_v2 import PIMACV2
 from algorithms.pimac_v3 import PIMACV3
 from algorithms.pimac_v4 import PIMACV4
+from algorithms.pimac_v5 import PIMACV5
 from algorithms.qmix import QMIX
 from algorithms.random import RandomPolicy
 from algorithms.vdn import VDN
@@ -31,6 +32,7 @@ ALGORITHM_REGISTRY = {
     "pimac_v2": PIMACV2,
     "pimac_v3": PIMACV3,
     "pimac_v4": PIMACV4,
+    "pimac_v5": PIMACV5,
 }
 
 ALGORITHM_ORDER = (
