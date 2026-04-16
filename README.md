@@ -5,7 +5,7 @@ A small research repo for the PIMAC family and its benchmark tasks.
 ## Structure
 
 - `algorithms/`: all benchmark learners in one place.
-- `simple_spread/`, `simple_spread_dynamic/`, `simple_spread_dynamic_hard/`, `robotic_warehouse_dynamic/`, `level_based_foraging_dynamic/`, `toy_env/`: one task directory per environment.
+- `simple_spread/`, `simple_spread_dynamic/`, `simple_spread_dynamic_hard/`, `robotic_warehouse_dynamic/`, `level_based_foraging_dynamic/`, `lbf_hard/`, `toy_env/`: one task directory per environment.
   - `run.py`: the full task script.
   - `task.json`: default task settings.
   - `configs/`: runnable algorithm configs.
@@ -35,6 +35,7 @@ The public benchmark algorithms are:
 - `pimac_v2`
 - `pimac_v3`
 - `pimac_v4`
+- `pimac_v5`
 
 All learned algorithms use the same benchmark interface:
 
@@ -52,7 +53,7 @@ All learned algorithms use the same benchmark interface:
 `ParallelTransition` uses `active_agent_mask_dict` and `next_active_agent_mask_dict` for joint learners. This repo does not use legal-action masks.
 For `ippo`, `mappo`, and the `pimac_*` variants, evaluation mode keeps stochastic policy sampling and only switches modules to eval mode.
 The simple-spread task family now uses one fully cooperative shared reward: landmark coverage plus a global collision penalty counted once per colliding pair.
-In `pimac_v1` through `pimac_v4`, the centralized value critic consumes concatenated coordination tokens rather than mean-pooling them before the value head.
+In `pimac_v1` through `pimac_v5`, the centralized value critic consumes concatenated coordination tokens rather than mean-pooling them before the value head.
 
 ## Running one task
 
@@ -114,6 +115,7 @@ Active sweep semantics:
 - In that mode, the sweep objective is one held-out final-checkpoint evaluation only.
 - The held-out sweep split still uses the task `test_*` fields for simplicity.
 - `level_based_foraging_dynamic` uses team return as its task KPI and also trains on a broadcast team-return reward; other tasks keep mean-agent episode return.
+- `lbf_hard` keeps the same team-return KPI but replaces native LBF observations with a fixed-slot local entity encoding so roster size is not leaked by observation width or padding.
 
 Compare the selected checkpoints from a suite:
 

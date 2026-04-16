@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import os
 import time
 from pathlib import Path
@@ -60,11 +61,25 @@ def load_json(path: str | Path) -> dict:
     return dict(data)
 
 
-def write_json(path: str | Path, data: dict) -> None:
+def _json_safe(value):
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, np.ndarray):
+        return _json_safe(value.tolist())
+    if isinstance(value, np.generic):
+        return _json_safe(value.item())
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    return value
+
+
+def write_json(path: str | Path, data) -> None:
     resolved = Path(path)
     resolved.parent.mkdir(parents=True, exist_ok=True)
     with resolved.open("w", encoding="utf-8") as handle:
-        json.dump(data, handle, indent=2, sort_keys=True)
+        json.dump(_json_safe(data), handle, indent=2, sort_keys=True, allow_nan=False)
 
 
 def write_csv(path: str | Path, rows: Sequence[dict], fieldnames: Sequence[str] | None = None) -> None:
@@ -162,7 +177,7 @@ def save_update_history_json(path: str | Path, update_history: Sequence[UpdateRe
     resolved = Path(path)
     resolved.parent.mkdir(parents=True, exist_ok=True)
     with resolved.open("w", encoding="utf-8") as handle:
-        json.dump(rows, handle, indent=2)
+        json.dump(_json_safe(rows), handle, indent=2, allow_nan=False)
 
 
 def save_update_history_csv(path: str | Path, update_history: Sequence[UpdateReport | dict]) -> None:
