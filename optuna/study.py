@@ -91,17 +91,35 @@ class TrialResult:
     """The few summary numbers that drive leaderboard ranking."""
 
     objective_score: float
-    best_validation_mean: float
-    best_checkpoint_test_mean: float
-    final_checkpoint_test_mean: float
-    convergence_episode_90pct: int
-    final_train_moving_average: float
-    reward_slope_last_window: float
-    best_vs_final_drop: float
+    best_validation_mean: float | None
+    best_checkpoint_test_mean: float | None
+    final_checkpoint_test_mean: float | None
+    convergence_episode_90pct: int | None
+    final_train_moving_average: float | None
+    reward_slope_last_window: float | None
+    best_vs_final_drop: float | None
     train_return_std_last_100: float
     summary: dict[str, Any]
     summary_path: str
     run_output_dir: str
+
+
+def _optional_float(value: Any) -> float | None:
+    try:
+        if value in ("", None):
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _optional_int(value: Any) -> int | None:
+    try:
+        if value in ("", None):
+            return None
+        return int(value)
+    except Exception:
+        return None
 
 
 def _build_command(trial_run: TrialRun) -> list[str]:
@@ -155,18 +173,18 @@ def extract_trial_result(*, summary_path: Path, train_history_path: Path, run_ou
     test = summary.get("test", {})
     best_checkpoint = test.get("best_checkpoint", {})
     final_checkpoint = test.get("final_checkpoint", {})
-    best_checkpoint_mean = float(best_checkpoint.get("overall_eval_mean", test.get("best_checkpoint_mean", float("nan"))))
-    final_checkpoint_mean = float(final_checkpoint.get("overall_eval_mean", test.get("final_checkpoint_mean", float("nan"))))
+    best_checkpoint_mean = _optional_float(best_checkpoint.get("overall_eval_mean", test.get("best_checkpoint_mean")))
+    final_checkpoint_mean = _optional_float(final_checkpoint.get("overall_eval_mean", test.get("final_checkpoint_mean")))
 
     return TrialResult(
         objective_score=float(test["objective_score"]),
-        best_validation_mean=float(validation["best_validation_mean"]),
+        best_validation_mean=_optional_float(validation.get("best_validation_mean")),
         best_checkpoint_test_mean=best_checkpoint_mean,
         final_checkpoint_test_mean=final_checkpoint_mean,
-        convergence_episode_90pct=int(validation["convergence_episode_90pct"]),
-        final_train_moving_average=float(summary["train"]["final_moving_average"]),
-        reward_slope_last_window=float(summary["train"]["reward_slope_last_window"]),
-        best_vs_final_drop=float(test["best_vs_final_drop"]),
+        convergence_episode_90pct=_optional_int(validation.get("convergence_episode_90pct")),
+        final_train_moving_average=_optional_float(summary.get("train", {}).get("final_moving_average")),
+        reward_slope_last_window=_optional_float(summary.get("train", {}).get("reward_slope_last_window")),
+        best_vs_final_drop=_optional_float(test.get("best_vs_final_drop")),
         train_return_std_last_100=_train_return_std_last_100(train_history_path),
         summary=summary,
         summary_path=str(summary_path),

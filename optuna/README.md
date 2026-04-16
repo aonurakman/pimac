@@ -71,6 +71,10 @@ The maintained inheritance shape in `base.json` is:
 - `iql -> vdn`
 - `iql -> qmix`
 
+Study-specific manifests can also add extra branches such as:
+
+- `mappo -> pimac_v5`
+
 ### Active sweep protocol
 
 Active sweep manifests should usually use the cheaper sweep path:
@@ -83,6 +87,7 @@ Active sweep manifests should usually use the cheaper sweep path:
 For these sweep runs, only `final_checkpoint.pt` is written.
 The held-out sweep split still comes from the task `test_*` fields, so it is a selection split rather than an untouched final test split.
 `level_based_foraging_dynamic` is the one maintained exception to mean-agent sweep scoring: its task hook reports team return instead.
+`lbf_hard` uses the same team-return scoring but with a fixed-slot local entity observation wrapper that removes the native roster-size leak.
 
 Value-based manifests can also use `temp_gap_fraction_at_budget`, which `search_spaces.py` converts into raw `temp_decay` with an approximate update-budget normalization.
 

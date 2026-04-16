@@ -1,0 +1,486 @@
+{
+  "notes": [
+    "CPU-friendly calibration sweep for lbf_hard.",
+    "Wide search ranges, generous trial counts, and DAG parallelism across algorithms only.",
+    "Run with --parallel-jobs 3."
+  ],
+  "task": "lbf_hard",
+  "seed": 42,
+  "task_overrides": {
+    "episodes": 6000,
+    "eval_every_episodes": 0,
+    "test_rollouts": 4
+  },
+  "algorithms": [
+    {
+      "name": "mappo",
+      "trials": 36,
+      "base_config": "lbf_hard/configs/mappo/default.json",
+      "search": {
+        "actor_arch": {
+          "type": "categorical",
+          "values": [
+            { "num_hidden": 1, "widths": [64, 64] },
+            { "num_hidden": 2, "widths": [64, 64, 64] },
+            { "num_hidden": 2, "widths": [64, 128, 64] },
+            { "num_hidden": 2, "widths": [128, 128, 128] },
+            { "num_hidden": 2, "widths": [128, 256, 128] },
+            { "num_hidden": 3, "widths": [96, 128, 128, 96] }
+          ],
+          "merge": true
+        },
+        "lr": {
+          "type": "float",
+          "low": 0.00003,
+          "high": 0.002,
+          "log": true
+        },
+        "batch_size": {
+          "type": "categorical",
+          "values": [32, 64, 128, 256]
+        },
+        "update_every_episodes": {
+          "type": "categorical",
+          "values": [1, 2, 4, 8, 16]
+        },
+        "num_epochs": {
+          "type": "categorical",
+          "values": [2, 4, 6, 8]
+        },
+        "rnn_hidden_dim": {
+          "type": "categorical",
+          "values": [32, 64, 128, 192]
+        },
+        "clip_eps": {
+          "type": "categorical",
+          "values": [0.1, 0.15, 0.2, 0.25, 0.3]
+        },
+        "gamma": {
+          "type": "categorical",
+          "values": [0.97, 0.985, 0.99, 0.995]
+        },
+        "gae_lambda": {
+          "type": "categorical",
+          "values": [0.9, 0.93, 0.95, 0.97, 0.99]
+        },
+        "entropy_coef": {
+          "type": "float",
+          "low": 0.0001,
+          "high": 0.05,
+          "log": true
+        },
+        "value_coef": {
+          "type": "categorical",
+          "values": [0.25, 0.5, 1.0, 2.0]
+        },
+        "max_grad_norm": {
+          "type": "categorical",
+          "values": [0.5, 1.0, 2.0, 5.0, 10.0]
+        },
+        "critic_hidden_sizes": {
+          "type": "categorical",
+          "values": [
+            [64, 64],
+            [96, 96],
+            [128, 96],
+            [128, 128],
+            [160, 128],
+            [160, 160],
+            [128, 128, 128],
+            [160, 160, 160]
+          ]
+        }
+      }
+    },
+    {
+      "name": "pimac_v0",
+      "trials": 32,
+      "base_config": "lbf_hard/configs/pimac_v0/default.json",
+      "inherit": [
+        {
+          "from": "mappo",
+          "keys": [
+            "lr",
+            "batch_size",
+            "update_every_episodes",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm"
+          ],
+          "required": true
+        }
+      ],
+      "search": {
+        "critic_hidden_sizes": {
+          "type": "categorical",
+          "values": [
+            [64, 64],
+            [96, 96],
+            [128, 96],
+            [128, 128],
+            [160, 128],
+            [160, 160],
+            [128, 128, 128]
+          ]
+        },
+        "set_embed_dim": {
+          "type": "categorical",
+          "values": [48, 64, 96, 128, 160]
+        },
+        "set_encoder_hidden_sizes": {
+          "type": "categorical",
+          "values": [
+            [48, 48],
+            [64, 64],
+            [96, 64],
+            [96, 96],
+            [128, 64],
+            [128, 128],
+            [160, 96]
+          ]
+        },
+        "include_team_size_feature": {
+          "type": "categorical",
+          "values": [false, true]
+        }
+      }
+    },
+    {
+      "name": "pimac_v1",
+      "trials": 64,
+      "base_config": "lbf_hard/configs/pimac_v1/default.json",
+      "inherit": [
+        {
+          "from": "mappo",
+          "keys": [
+            "lr",
+            "batch_size",
+            "update_every_episodes",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm"
+          ],
+          "required": true
+        }
+      ],
+      "search": {
+        "critic_hidden_sizes": {
+          "type": "categorical",
+          "values": [
+            [64, 64],
+            [96, 96],
+            [128, 96],
+            [128, 128],
+            [160, 128],
+            [160, 160],
+            [192, 160],
+            [128, 128, 128]
+          ]
+        },
+        "set_embed_dim": {
+          "type": "categorical",
+          "values": [48, 64, 96, 128, 160]
+        },
+        "set_encoder_hidden_sizes": {
+          "type": "categorical",
+          "values": [
+            [64, 64],
+            [96, 64],
+            [96, 96],
+            [128, 64],
+            [128, 128],
+            [160, 96],
+            [160, 128]
+          ]
+        },
+        "include_team_size_feature": {
+          "type": "categorical",
+          "values": [false, true]
+        },
+        "num_tokens": {
+          "type": "categorical",
+          "values": [2, 3, 4, 5, 6, 8]
+        },
+        "distill_weight": {
+          "type": "float",
+          "low": 0.0001,
+          "high": 0.3,
+          "log": true
+        },
+        "counterfactual_weight": {
+          "type": "categorical",
+          "values": [0.0, 0.0025, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2]
+        },
+        "teacher_ema_tau": {
+          "type": "categorical",
+          "values": [0.001, 0.0025, 0.005, 0.01, 0.02, 0.05]
+        },
+        "ctx_logvar_bounds": {
+          "type": "categorical",
+          "values": [
+            [-6.0, 4.0],
+            [-4.0, 3.0],
+            [-3.0, 2.0],
+            [-2.0, 1.5],
+            [-1.0, 1.0],
+            [-0.5, 0.75]
+          ],
+          "targets": ["ctx_logvar_min", "ctx_logvar_max"]
+        }
+      }
+    },
+    {
+      "name": "pimac_v2",
+      "trials": 72,
+      "base_config": "lbf_hard/configs/pimac_v2/default.json",
+      "inherit": [
+        {
+          "from": "pimac_v1",
+          "keys": [
+            "lr",
+            "batch_size",
+            "update_every_episodes",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm",
+            "critic_hidden_sizes",
+            "set_embed_dim",
+            "set_encoder_hidden_sizes",
+            "include_team_size_feature",
+            "num_tokens"
+          ],
+          "required": true
+        }
+      ],
+      "search": {
+        "distill_weight": {
+          "type": "float",
+          "low": 0.0001,
+          "high": 0.3,
+          "log": true
+        },
+        "counterfactual_weight": {
+          "type": "categorical",
+          "values": [0.0, 0.0025, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2]
+        },
+        "teacher_ema_tau": {
+          "type": "categorical",
+          "values": [0.001, 0.0025, 0.005, 0.01, 0.02, 0.05]
+        },
+        "ctx_logvar_bounds": {
+          "type": "categorical",
+          "values": [
+            [-6.0, 4.0],
+            [-4.0, 3.0],
+            [-3.0, 2.0],
+            [-2.0, 1.5],
+            [-1.0, 1.0],
+            [-0.5, 0.75]
+          ],
+          "targets": ["ctx_logvar_min", "ctx_logvar_max"]
+        }
+      }
+    },
+    {
+      "name": "pimac_v3",
+      "trials": 72,
+      "base_config": "lbf_hard/configs/pimac_v3/default.json",
+      "inherit": [
+        {
+          "from": "pimac_v1",
+          "keys": [
+            "lr",
+            "batch_size",
+            "update_every_episodes",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm",
+            "critic_hidden_sizes",
+            "set_embed_dim",
+            "set_encoder_hidden_sizes",
+            "include_team_size_feature",
+            "num_tokens"
+          ],
+          "required": true
+        }
+      ],
+      "search": {
+        "distill_weight": {
+          "type": "float",
+          "low": 0.0001,
+          "high": 0.3,
+          "log": true
+        },
+        "counterfactual_weight": {
+          "type": "categorical",
+          "values": [0.0, 0.0025, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2]
+        },
+        "teacher_ema_tau": {
+          "type": "categorical",
+          "values": [0.001, 0.0025, 0.005, 0.01, 0.02, 0.05]
+        },
+        "ctx_logvar_bounds": {
+          "type": "categorical",
+          "values": [
+            [-6.0, 4.0],
+            [-4.0, 3.0],
+            [-3.0, 2.0],
+            [-2.0, 1.5],
+            [-1.0, 1.0],
+            [-0.5, 0.75]
+          ],
+          "targets": ["ctx_logvar_min", "ctx_logvar_max"]
+        },
+        "hypernet_rank": {
+          "type": "categorical",
+          "values": [1, 2, 4, 8]
+        },
+        "hypernet_hidden_sizes": {
+          "type": "categorical",
+          "values": [
+            [16, 16],
+            [32, 16],
+            [32, 32],
+            [64, 32],
+            [64, 64],
+            [96, 64],
+            [128, 64]
+          ]
+        },
+        "hypernet_delta_init_scale": {
+          "type": "categorical",
+          "values": [0.001, 0.0025, 0.005, 0.01, 0.02, 0.05, 0.1]
+        },
+        "hypernet_l2_coef": {
+          "type": "float",
+          "low": 1e-06,
+          "high": 0.005,
+          "log": true
+        }
+      }
+    },
+    {
+      "name": "pimac_v5",
+      "trials": 72,
+      "base_config": "lbf_hard/configs/pimac_v5/default.json",
+      "inherit": [
+        {
+          "from": "mappo",
+          "keys": [
+            "lr",
+            "batch_size",
+            "update_every_episodes",
+            "num_epochs",
+            "num_hidden",
+            "widths",
+            "rnn_hidden_dim",
+            "clip_eps",
+            "gamma",
+            "gae_lambda",
+            "entropy_coef",
+            "value_coef",
+            "max_grad_norm"
+          ],
+          "required": true
+        }
+      ],
+      "search": {
+        "critic_hidden_sizes": {
+          "type": "categorical",
+          "values": [
+            [64, 64],
+            [96, 96],
+            [128, 96],
+            [128, 128],
+            [160, 128],
+            [160, 160],
+            [192, 160],
+            [128, 128, 128]
+          ]
+        },
+        "set_embed_dim": {
+          "type": "categorical",
+          "values": [48, 64, 96, 128, 160]
+        },
+        "set_encoder_hidden_sizes": {
+          "type": "categorical",
+          "values": [
+            [64, 64],
+            [96, 64],
+            [96, 96],
+            [128, 64],
+            [128, 128],
+            [160, 96],
+            [160, 128]
+          ]
+        },
+        "include_team_size_feature": {
+          "type": "categorical",
+          "values": [false, true]
+        },
+        "num_tokens": {
+          "type": "categorical",
+          "values": [2, 3, 4, 5, 6, 8]
+        },
+        "distill_weight": {
+          "type": "float",
+          "low": 0.001,
+          "high": 30.0,
+          "log": true
+        },
+        "uncertainty_calibration_weight": {
+          "type": "categorical",
+          "values": [0.0, 0.001, 0.0025, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0]
+        },
+        "counterfactual_weight": {
+          "type": "categorical",
+          "values": [0.0, 0.0025, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2]
+        },
+        "teacher_ema_tau": {
+          "type": "categorical",
+          "values": [0.001, 0.0025, 0.005, 0.01, 0.02, 0.05]
+        },
+        "ctx_log_uncertainty_bounds": {
+          "type": "categorical",
+          "values": [
+            [-6.0, 4.0],
+            [-4.0, 3.0],
+            [-3.0, 2.0],
+            [-2.0, 1.5],
+            [-1.0, 1.0],
+            [-0.5, 0.75]
+          ],
+          "targets": ["ctx_log_uncertainty_min", "ctx_log_uncertainty_max"]
+        }
+      }
+    }
+  ]
+}

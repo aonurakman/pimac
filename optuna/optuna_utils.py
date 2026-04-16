@@ -19,7 +19,7 @@ from algorithms.registry import ALGORITHM_ORDER
 from utils import OPTUNA_RESULTS_ROOT, load_json
 
 
-LEARNED_ALGORITHM_ORDER = tuple(name for name in ALGORITHM_ORDER if name != "random")
+LEARNED_ALGORITHM_ORDER = tuple(dict.fromkeys([*(name for name in ALGORITHM_ORDER if name != "random"), "pimac_v5"]))
 
 
 @dataclass(frozen=True)
@@ -89,6 +89,12 @@ TASK_SPECS: dict[str, TaskSpec] = {
         run_script=PROJECT_ROOT / "level_based_foraging_dynamic" / "run.py",
         task_config=PROJECT_ROOT / "level_based_foraging_dynamic" / "task.json",
         config_root=PROJECT_ROOT / "level_based_foraging_dynamic" / "configs",
+    ),
+    "lbf_hard": TaskSpec(
+        task_id="lbf_hard",
+        run_script=PROJECT_ROOT / "lbf_hard" / "run.py",
+        task_config=PROJECT_ROOT / "lbf_hard" / "task.json",
+        config_root=PROJECT_ROOT / "lbf_hard" / "configs",
     ),
     "toy_env": TaskSpec(
         task_id="toy_env",

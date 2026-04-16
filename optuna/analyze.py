@@ -26,7 +26,7 @@ from optuna_utils import LEARNED_ALGORITHM_ORDER, TASK_SPECS, discover_task_ids,
 from utils import OPTUNA_RESULTS_ROOT, load_json, save_gif, write_csv, write_json
 
 
-PIMAC_TRACE_ALGORITHMS = {"pimac_v1", "pimac_v2", "pimac_v3", "pimac_v4"}
+PIMAC_TRACE_ALGORITHMS = {"pimac_v1", "pimac_v2", "pimac_v3", "pimac_v4", "pimac_v5"}
 DEFAULT_VIDEO_DYNAMIC_COUNTS = (1, 4, 8, 10)
 
 
@@ -53,6 +53,38 @@ def _suite_root(suite_id: str, results_root: Path = OPTUNA_RESULTS_ROOT) -> Path
     return Path(results_root) / suite_id
 
 
+def _extract_teacher_details(critic_outputs) -> tuple[torch.Tensor, torch.Tensor]:
+    """Read token vectors and teacher context from `critic(..., return_details=True)`."""
+    if not isinstance(critic_outputs, tuple) or len(critic_outputs) < 3:
+        raise ValueError("Expected critic return_details output with at least value, tokens, and teacher context.")
+    return critic_outputs[1], critic_outputs[2]
+
+
+def _resolve_recorded_suite_path(recorded_path: str | Path, *, suite_id: str, results_root: Path) -> Path:
+    """Resolve a stored path by reusing only its stable suffix under `results/`."""
+    candidate = Path(str(recorded_path))
+    if candidate.exists():
+        return candidate
+
+    parts = candidate.parts
+    rebased_candidates: list[Path] = []
+    if "results" in parts:
+        results_index = parts.index("results")
+        rebased_candidates.append(Path(results_root).parent / Path(*parts[results_index:]))
+    if suite_id in parts:
+        suite_index = parts.index(suite_id)
+        rebased_candidates.append(Path(results_root) / Path(*parts[suite_index:]))
+    for anchor_name in ("trial_runs", "logs", "studies", "exports"):
+        if anchor_name in parts:
+            anchor_index = parts.index(anchor_name)
+            rebased_candidates.append(Path(results_root) / suite_id / Path(*parts[anchor_index:]))
+            break
+    for rebased in rebased_candidates:
+        if rebased.exists():
+            return rebased
+    return rebased_candidates[0] if rebased_candidates else candidate
+
+
 def discover_best_runs(*, suite_id: str, task_id: str, results_root: Path = OPTUNA_RESULTS_ROOT) -> list[BestRun]:
     study_dir = Path(results_root) / suite_id / "studies" / task_id
     discovered: list[BestRun] = []
@@ -67,8 +99,24 @@ def discover_best_runs(*, suite_id: str, task_id: str, results_root: Path = OPTU
         if not ranked_rows:
             continue
         row = ranked_rows[0][1]
-        run_output_dir = Path(row["run_output_dir"])
-        summary_path = run_output_dir / "summary.json"
+        summary_path = None
+        if row.get("summary_path"):
+            summary_path = _resolve_recorded_suite_path(
+                row["summary_path"],
+                suite_id=suite_id,
+                results_root=results_root,
+            )
+        run_output_dir = _resolve_recorded_suite_path(
+            row["run_output_dir"],
+            suite_id=suite_id,
+            results_root=results_root,
+        )
+        if summary_path is None:
+            summary_path = run_output_dir / "summary.json"
+        elif not run_output_dir.is_dir():
+            run_output_dir = summary_path.parent
+        if not summary_path.is_file():
+            summary_path = run_output_dir / "summary.json"
         config_snapshot_path = run_output_dir / "config_snapshot.json"
         if not (summary_path.is_file() and config_snapshot_path.is_file()):
             continue
@@ -442,7 +490,10 @@ def analyze_pimac_coordination(
                                 actions[str(agent_id)] = action
 
                                 student_ctx = aux["ctx_mu"].squeeze(0).squeeze(0).detach().cpu().numpy()
-                                student_logvar = aux["ctx_logvar"].squeeze(0).squeeze(0).detach().cpu().numpy()
+                                uncertainty_key = "ctx_log_uncertainty" if "ctx_log_uncertainty" in aux else "ctx_logvar"
+                                student_log_uncertainty = (
+                                    aux[uncertainty_key].squeeze(0).squeeze(0).detach().cpu().numpy()
+                                )
                                 student_contexts.append(student_ctx)
                                 student_row = {
                                     "algorithm": best_run.algorithm,
@@ -455,7 +506,7 @@ def analyze_pimac_coordination(
                                     "agent_id": str(agent_id),
                                     "agent_position": int(agent_position),
                                     "action": int(action),
-                                    "ctx_logvar_mean": float(np.mean(student_logvar)),
+                                    "ctx_log_uncertainty_mean": float(np.mean(student_log_uncertainty)),
                                     "student_ctx_norm": float(np.linalg.norm(student_ctx)),
                                 }
                                 if "gate" in aux:
@@ -474,7 +525,9 @@ def analyze_pimac_coordination(
                             )
                             obs_tensor = torch.as_tensor(stacked_obs, dtype=torch.float32, device=learner.device).view(1, 1, len(agent_ids), -1)
                             active_mask = torch.ones(1, 1, len(agent_ids), dtype=torch.float32, device=learner.device)
-                            _, tokens, teacher_context = learner.critic(obs_tensor, active_mask, return_details=True)
+                            tokens, teacher_context = _extract_teacher_details(
+                                learner.critic(obs_tensor, active_mask, return_details=True)
+                            )
                             token_vectors = tokens.squeeze(0).squeeze(0).detach().cpu().numpy()
                             teacher_context_matrix = teacher_context.squeeze(0).squeeze(0).detach().cpu().numpy()
 
@@ -537,6 +590,11 @@ def analyze_pimac_coordination(
             token_group = [row for row in token_rows if row["algorithm"] == algorithm and int(row["n_agents"]) == n_agents]
             if not student_group:
                 continue
+            uncertainty_values = [
+                float(row.get("ctx_log_uncertainty_mean", row.get("ctx_logvar_mean")))
+                for row in student_group
+                if row.get("ctx_log_uncertainty_mean", row.get("ctx_logvar_mean")) is not None
+            ]
             summary_rows.append(
                 {
                     "algorithm": algorithm,
@@ -544,7 +602,7 @@ def analyze_pimac_coordination(
                     "samples": int(len(student_group)),
                     "teacher_alignment_cosine_mean": float(np.mean([float(row["teacher_alignment_cosine"]) for row in student_group])),
                     "teacher_alignment_mse_mean": float(np.mean([float(row["teacher_alignment_mse"]) for row in student_group])),
-                    "ctx_logvar_mean": float(np.mean([float(row["ctx_logvar_mean"]) for row in student_group])),
+                    "ctx_log_uncertainty_mean": float(np.mean(uncertainty_values)) if uncertainty_values else None,
                     "gate_mean": float(np.mean([float(row["gate"]) for row in student_group if row.get("gate") is not None])) if any(row.get("gate") is not None for row in student_group) else None,
                     "delta_w_norm_mean": float(np.mean([float(row["delta_w_norm"]) for row in student_group if row.get("delta_w_norm") is not None])) if any(row.get("delta_w_norm") is not None for row in student_group) else None,
                     "delta_b_norm_mean": float(np.mean([float(row["delta_b_norm"]) for row in student_group if row.get("delta_b_norm") is not None])) if any(row.get("delta_b_norm") is not None for row in student_group) else None,

@@ -1,0 +1,90 @@
+{
+  "notes": [
+    "Follow-up CPU-friendly calibration sweep for level_based_foraging_dynamic.",
+    "Tests only pimac_v5, seeded from the best MAPPO config found in lbf_cal_01.",
+    "Run with --parallel-jobs 1."
+  ],
+  "task": "level_based_foraging_dynamic",
+  "seed": 42,
+  "task_overrides": {
+    "episodes": 6000,
+    "eval_every_episodes": 0,
+    "test_rollouts": 4
+  },
+  "algorithms": [
+    {
+      "name": "pimac_v5",
+      "trials": 72,
+      "base_config": "optuna/study_library/seeds/lbf_cal_01_mappo_rank_01.json",
+      "search": {
+        "critic_hidden_sizes": {
+          "type": "categorical",
+          "values": [
+            [64, 64],
+            [96, 96],
+            [128, 96],
+            [128, 128],
+            [160, 128],
+            [160, 160],
+            [192, 160],
+            [128, 128, 128]
+          ]
+        },
+        "set_embed_dim": {
+          "type": "categorical",
+          "values": [48, 64, 96, 128, 160]
+        },
+        "set_encoder_hidden_sizes": {
+          "type": "categorical",
+          "values": [
+            [64, 64],
+            [96, 64],
+            [96, 96],
+            [128, 64],
+            [128, 128],
+            [160, 96],
+            [160, 128]
+          ]
+        },
+        "include_team_size_feature": {
+          "type": "categorical",
+          "values": [false, true]
+        },
+        "num_tokens": {
+          "type": "categorical",
+          "values": [2, 3, 4, 5, 6, 8]
+        },
+        "distill_weight": {
+          "type": "float",
+          "low": 0.001,
+          "high": 30.0,
+          "log": true
+        },
+        "uncertainty_calibration_weight": {
+          "type": "categorical",
+          "values": [0.0, 0.001, 0.0025, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0]
+        },
+        "counterfactual_weight": {
+          "type": "categorical",
+          "values": [0.0, 0.0025, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2]
+        },
+        "teacher_ema_tau": {
+          "type": "categorical",
+          "values": [0.001, 0.0025, 0.005, 0.01, 0.02, 0.05]
+        },
+        "ctx_log_uncertainty_bounds": {
+          "type": "categorical",
+          "values": [
+            [-6.0, 4.0],
+            [-4.0, 3.0],
+            [-3.0, 2.0],
+            [-2.0, 1.5],
+            [-1.0, 1.0],
+            [-0.5, 0.75]
+          ],
+          "targets": ["ctx_log_uncertainty_min", "ctx_log_uncertainty_max"]
+        }
+      }
+    }
+  ]
+}
