@@ -36,3 +36,4 @@ optuna/results/*
 tests/
 .agents/
 AGENTS.md
+paper/
