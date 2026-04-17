@@ -19,7 +19,7 @@ from algorithms.registry import ALGORITHM_ORDER
 from utils import OPTUNA_RESULTS_ROOT, load_json
 
 
-LEARNED_ALGORITHM_ORDER = tuple(dict.fromkeys([*(name for name in ALGORITHM_ORDER if name != "random"), "pimac_v5"]))
+LEARNED_ALGORITHM_ORDER = tuple(name for name in ALGORITHM_ORDER if name != "random")
 
 
 @dataclass(frozen=True)

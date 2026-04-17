@@ -25,6 +25,7 @@ from robotic_warehouse_dynamic.utils import (
     close_env_cache,
     evaluate_one_count,
     get_or_create_env,
+    grouped_eval_metrics,
     is_checkpoint_selection_eligible,
     pad_vector,
     plot_training_dashboard,
@@ -390,7 +391,7 @@ def run_task(
 
                 eligible_results = eval_results if is_checkpoint_selection_eligible(task_config, episode_index + 1, curriculum_windows) else []
                 if eligible_results:
-                    score = float(np.mean([eval_result.return_mean for eval_result in eligible_results]))
+                    score = float(grouped_eval_metrics(task_config, eligible_results)["selection_score"])
                     if score > (best_eval + float(task_config["min_improve"])):
                         learner.save_checkpoint(best_ckpt_path)
                         best_eval = score

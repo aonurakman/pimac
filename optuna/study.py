@@ -91,6 +91,9 @@ class TrialResult:
     """The few summary numbers that drive leaderboard ranking."""
 
     objective_score: float
+    train_counts_mean: float | None
+    validation_counts_mean: float | None
+    test_counts_mean: float | None
     best_validation_mean: float | None
     best_checkpoint_test_mean: float | None
     final_checkpoint_test_mean: float | None
@@ -178,6 +181,9 @@ def extract_trial_result(*, summary_path: Path, train_history_path: Path, run_ou
 
     return TrialResult(
         objective_score=float(test["objective_score"]),
+        train_counts_mean=_optional_float(test.get("train_counts_mean")),
+        validation_counts_mean=_optional_float(test.get("validation_counts_mean")),
+        test_counts_mean=_optional_float(test.get("test_counts_mean")),
         best_validation_mean=_optional_float(validation.get("best_validation_mean")),
         best_checkpoint_test_mean=best_checkpoint_mean,
         final_checkpoint_test_mean=final_checkpoint_mean,
@@ -231,8 +237,13 @@ def _trial_rows(study: optuna_lib.Study) -> list[dict[str, Any]]:
             "trial_number": trial.number,
             "state": trial.state.name,
             "objective_score": trial.value if trial.value is not None else "",
+            "train_counts_mean": trial.user_attrs.get("train_counts_mean", ""),
+            "validation_counts_mean": trial.user_attrs.get("validation_counts_mean", ""),
+            "test_counts_mean": trial.user_attrs.get("test_counts_mean", ""),
         }
         for key, value in sorted(trial.user_attrs.items()):
+            if key in {"train_counts_mean", "validation_counts_mean", "test_counts_mean"}:
+                continue
             if isinstance(value, (dict, list)):
                 row[key] = json.dumps(value, sort_keys=True)
             else:
@@ -253,6 +264,9 @@ def _completed_leaderboard(study: optuna_lib.Study) -> list[dict[str, Any]]:
                 "rank": rank,
                 "trial_number": trial.number,
                 "objective_score": float(trial.value),
+                "train_counts_mean": trial.user_attrs.get("train_counts_mean", ""),
+                "validation_counts_mean": trial.user_attrs.get("validation_counts_mean", ""),
+                "test_counts_mean": trial.user_attrs.get("test_counts_mean", ""),
                 "best_validation_mean": trial.user_attrs.get("best_validation_mean", ""),
                 "best_checkpoint_test_mean": trial.user_attrs.get("best_checkpoint_test_mean", ""),
                 "final_checkpoint_test_mean": trial.user_attrs.get("final_checkpoint_test_mean", ""),
@@ -460,6 +474,9 @@ def _run_algorithm_study(
             )
         )
         trial.set_user_attr("best_validation_mean", result.best_validation_mean)
+        trial.set_user_attr("train_counts_mean", result.train_counts_mean)
+        trial.set_user_attr("validation_counts_mean", result.validation_counts_mean)
+        trial.set_user_attr("test_counts_mean", result.test_counts_mean)
         trial.set_user_attr("best_checkpoint_test_mean", result.best_checkpoint_test_mean)
         trial.set_user_attr("final_checkpoint_test_mean", result.final_checkpoint_test_mean)
         trial.set_user_attr("convergence_episode_90pct", result.convergence_episode_90pct)

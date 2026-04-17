@@ -26,7 +26,7 @@ from optuna_utils import LEARNED_ALGORITHM_ORDER, TASK_SPECS, discover_task_ids,
 from utils import OPTUNA_RESULTS_ROOT, load_json, save_gif, write_csv, write_json
 
 
-PIMAC_TRACE_ALGORITHMS = {"pimac_v1", "pimac_v2", "pimac_v3", "pimac_v4", "pimac_v5"}
+PIMAC_TRACE_ALGORITHMS = {"pimac_v1", "pimac_v2", "pimac_v3", "pimac_v4", "pimac_v5", "pimac_v6", "pimac_v7"}
 DEFAULT_VIDEO_DYNAMIC_COUNTS = (1, 4, 8, 10)
 
 
@@ -43,6 +43,17 @@ class BestRun:
     config_snapshot_path: Path
     config_snapshot: dict[str, Any]
     effective_config: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class TrialRun:
+    algorithm: str
+    task_id: str
+    seed: int
+    run_dir: Path
+    checkpoint_path: Path
+    summary_path: Path
+    config_snapshot_path: Path
 
 
 def _task_script_module(task_id: str):
@@ -180,6 +191,120 @@ def load_best_policy(best_run: BestRun, *, task_id: str, seed: int):
     )
     learner.set_eval_mode()
     return learner, task_config, task_script, env_spec
+
+
+def _load_trial_run(trial_dir: Path) -> TrialRun:
+    """Load one recorded trial directory with its resolved checkpoint path."""
+    config_snapshot_path = Path(trial_dir) / "config_snapshot.json"
+    summary_path = Path(trial_dir) / "summary.json"
+    if not config_snapshot_path.is_file() or not summary_path.is_file():
+        raise FileNotFoundError(f"Trial directory is missing summary artifacts: {trial_dir}")
+    config_snapshot = load_json(config_snapshot_path)
+    summary = load_json(summary_path)
+    checkpoint_path = Path(trial_dir) / "best_checkpoint.pt"
+    if not checkpoint_path.is_file():
+        checkpoint_path = Path(trial_dir) / "final_checkpoint.pt"
+    if not checkpoint_path.is_file():
+        raise FileNotFoundError(f"Trial directory is missing checkpoint: {trial_dir}")
+    return TrialRun(
+        algorithm=str(config_snapshot["algorithm"]),
+        task_id=str(config_snapshot["task_config"]["task_name"]),
+        seed=int(summary["seed"]),
+        run_dir=Path(trial_dir),
+        checkpoint_path=checkpoint_path,
+        summary_path=summary_path,
+        config_snapshot_path=config_snapshot_path,
+    )
+
+
+def _apply_ctx_ablation(
+    ctx: torch.Tensor,
+    *,
+    mode: str,
+    permutation: np.ndarray | None = None,
+) -> torch.Tensor:
+    """Apply one context ablation to a stacked per-agent context tensor."""
+    if mode in {"baseline", "fixed_gate_mean", "always_on_gate"}:
+        return ctx
+    if mode == "zero_ctx":
+        return torch.zeros_like(ctx)
+    if mode == "shuffle_ctx_agents":
+        if permutation is None:
+            raise ValueError("shuffle_ctx_agents requires an explicit permutation.")
+        permutation_tensor = torch.as_tensor(permutation, dtype=torch.long, device=ctx.device)
+        return ctx.index_select(0, permutation_tensor)
+    raise ValueError(f"Unsupported context ablation mode: {mode}")
+
+
+def _act_parallel_pimac_v2_ablation(
+    learner,
+    obs_dict: dict[object, np.ndarray],
+    *,
+    mode: str,
+    fixed_gate_value: float | None,
+    rng: np.random.Generator,
+) -> dict[object, int]:
+    """Evaluate one PIMAC v2 actor step with inference-time context/gate ablations."""
+    if not obs_dict:
+        return {}
+
+    actor = learner.actor_net
+    hidden_dim = actor.rnn.hidden_size
+    sorted_agent_ids = sorted(obs_dict.keys(), key=str)
+
+    recurrent_features: list[torch.Tensor] = []
+    ctx_mu_list: list[torch.Tensor] = []
+    updated_hidden_states: list[torch.Tensor] = []
+    base_gates: list[torch.Tensor] = []
+
+    for agent_id in sorted_agent_ids:
+        observation_tensor = torch.as_tensor(obs_dict[agent_id], dtype=torch.float32, device=learner.device).view(1, 1, -1)
+        initial_hidden_state = learner._get_hidden_state(agent_id, hidden_dim)
+        encoded = actor._encode(observation_tensor.reshape(1, -1)).reshape(1, 1, -1)
+        recurrent_feature, updated_hidden_state = actor.rnn(encoded, initial_hidden_state)
+        ctx_mu = actor.ctx_mu_head(recurrent_feature)
+        ctx_logvar = torch.clamp(
+            actor.ctx_logvar_head(recurrent_feature),
+            min=float(actor.ctx_logvar_min),
+            max=float(actor.ctx_logvar_max),
+        )
+        mean_logvar = ctx_logvar.mean(dim=-1, keepdim=True)
+        base_gate = torch.sigmoid(actor.gate_weight * (-mean_logvar) + actor.gate_bias)
+
+        recurrent_features.append(recurrent_feature)
+        ctx_mu_list.append(ctx_mu)
+        updated_hidden_states.append(updated_hidden_state)
+        base_gates.append(base_gate)
+
+    recurrent_tensor = torch.cat(recurrent_features, dim=0)
+    ctx_tensor = torch.cat(ctx_mu_list, dim=0)
+    gate_tensor = torch.cat(base_gates, dim=0)
+
+    permutation = None
+    if mode == "shuffle_ctx_agents":
+        permutation = rng.permutation(len(sorted_agent_ids))
+    ctx_tensor = _apply_ctx_ablation(ctx_tensor, mode=mode, permutation=permutation)
+
+    if mode == "fixed_gate_mean":
+        if fixed_gate_value is None:
+            raise ValueError("fixed_gate_mean requires fixed_gate_value.")
+        gate_tensor = torch.full_like(gate_tensor, float(fixed_gate_value))
+    elif mode == "always_on_gate":
+        gate_tensor = torch.ones_like(gate_tensor) if fixed_gate_value is None else torch.full_like(gate_tensor, float(fixed_gate_value))
+    elif mode not in {"baseline", "zero_ctx", "shuffle_ctx_agents"}:
+        raise ValueError(f"Unsupported ablation mode: {mode}")
+
+    film_parameters = actor.film_head(ctx_tensor)
+    film_scale, film_shift = torch.chunk(film_parameters, 2, dim=-1)
+    modulated_features = recurrent_tensor * (1.0 + gate_tensor * film_scale) + gate_tensor * film_shift
+    logits = actor.policy_head(modulated_features).squeeze(1)
+
+    actions: dict[object, int] = {}
+    for agent_index, agent_id in enumerate(sorted_agent_ids):
+        learner._set_hidden_state(agent_id, updated_hidden_states[agent_index])
+        distribution = torch.distributions.Categorical(logits=logits[agent_index])
+        actions[agent_id] = int(distribution.sample().item())
+    return actions
 
 
 def _run_one_rollout(*, task_id: str, task_config: dict, task_script, env_spec, learner, seed: int, n_agents: int | None = None, render_mode: str | None = None, frame_budget: int | None = None):
@@ -490,10 +615,12 @@ def analyze_pimac_coordination(
                                 actions[str(agent_id)] = action
 
                                 student_ctx = aux["ctx_mu"].squeeze(0).squeeze(0).detach().cpu().numpy()
-                                uncertainty_key = "ctx_log_uncertainty" if "ctx_log_uncertainty" in aux else "ctx_logvar"
-                                student_log_uncertainty = (
-                                    aux[uncertainty_key].squeeze(0).squeeze(0).detach().cpu().numpy()
+                                signal_key = (
+                                    "ctx_reliance"
+                                    if "ctx_reliance" in aux
+                                    else ("ctx_log_uncertainty" if "ctx_log_uncertainty" in aux else "ctx_logvar")
                                 )
+                                student_gate_signal = aux[signal_key].squeeze(0).squeeze(0).detach().cpu().numpy()
                                 student_contexts.append(student_ctx)
                                 student_row = {
                                     "algorithm": best_run.algorithm,
@@ -506,9 +633,15 @@ def analyze_pimac_coordination(
                                     "agent_id": str(agent_id),
                                     "agent_position": int(agent_position),
                                     "action": int(action),
-                                    "ctx_log_uncertainty_mean": float(np.mean(student_log_uncertainty)),
+                                    "ctx_signal_mean": float(np.mean(student_gate_signal)),
                                     "student_ctx_norm": float(np.linalg.norm(student_ctx)),
                                 }
+                                if signal_key == "ctx_reliance":
+                                    student_row["ctx_reliance_mean"] = float(np.mean(student_gate_signal))
+                                elif signal_key == "ctx_log_uncertainty":
+                                    student_row["ctx_log_uncertainty_mean"] = float(np.mean(student_gate_signal))
+                                else:
+                                    student_row["ctx_logvar_mean"] = float(np.mean(student_gate_signal))
                                 if "gate" in aux:
                                     student_row["gate"] = float(aux["gate"].squeeze(0).squeeze(0).detach().cpu().item())
                                 if "delta_w_norm" in aux:
@@ -591,9 +724,17 @@ def analyze_pimac_coordination(
             if not student_group:
                 continue
             uncertainty_values = [
-                float(row.get("ctx_log_uncertainty_mean", row.get("ctx_logvar_mean")))
+                float(
+                    row.get(
+                        "ctx_signal_mean",
+                        row.get("ctx_reliance_mean", row.get("ctx_log_uncertainty_mean", row.get("ctx_logvar_mean"))),
+                    )
+                )
                 for row in student_group
-                if row.get("ctx_log_uncertainty_mean", row.get("ctx_logvar_mean")) is not None
+                if row.get(
+                    "ctx_signal_mean",
+                    row.get("ctx_reliance_mean", row.get("ctx_log_uncertainty_mean", row.get("ctx_logvar_mean"))),
+                ) is not None
             ]
             summary_rows.append(
                 {
@@ -602,7 +743,7 @@ def analyze_pimac_coordination(
                     "samples": int(len(student_group)),
                     "teacher_alignment_cosine_mean": float(np.mean([float(row["teacher_alignment_cosine"]) for row in student_group])),
                     "teacher_alignment_mse_mean": float(np.mean([float(row["teacher_alignment_mse"]) for row in student_group])),
-                    "ctx_log_uncertainty_mean": float(np.mean(uncertainty_values)) if uncertainty_values else None,
+                    "ctx_signal_mean": float(np.mean(uncertainty_values)) if uncertainty_values else None,
                     "gate_mean": float(np.mean([float(row["gate"]) for row in student_group if row.get("gate") is not None])) if any(row.get("gate") is not None for row in student_group) else None,
                     "delta_w_norm_mean": float(np.mean([float(row["delta_w_norm"]) for row in student_group if row.get("delta_w_norm") is not None])) if any(row.get("delta_w_norm") is not None for row in student_group) else None,
                     "delta_b_norm_mean": float(np.mean([float(row["delta_b_norm"]) for row in student_group if row.get("delta_b_norm") is not None])) if any(row.get("delta_b_norm") is not None for row in student_group) else None,

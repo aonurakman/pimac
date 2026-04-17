@@ -90,7 +90,23 @@
   "task_type": "dynamic_team_hard",
   "test_rollouts": 10,
   "test_seed_offset": 20000,
+  "train_counts": [
+    1,
+    2,
+    4,
+    6,
+    8
+  ],
   "train_max_agents": 8,
+  "validation_counts": [
+    3,
+    5,
+    7
+  ],
   "validation_rollouts": 5,
-  "validation_seed_offset": 10000
+  "validation_seed_offset": 10000,
+  "test_counts": [
+    9,
+    10
+  ]
 }

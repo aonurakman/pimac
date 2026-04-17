@@ -4,61 +4,59 @@
     {
       "counts": [
         2,
-        3
-      ],
-      "fraction": 0.2,
-      "name": "stage_1__2_3",
-      "weights": [
-        0.6,
-        0.4
-      ]
-    },
-    {
-      "counts": [
-        2,
-        3,
         4
       ],
-      "fraction": 0.25,
-      "name": "stage_2__2_3_4",
+      "fraction": 0.2,
+      "name": "stage_1__2_4",
       "weights": [
-        0.25,
-        0.3,
-        0.45
+        0.65,
+        0.35
       ]
     },
     {
       "counts": [
         2,
-        3,
         4,
         6
       ],
       "fraction": 0.25,
-      "name": "stage_3__2_3_4_6",
+      "name": "stage_2__2_4_6",
       "weights": [
-        0.12,
-        0.18,
-        0.28,
-        0.42
+        0.3,
+        0.2,
+        0.5
       ]
     },
     {
       "counts": [
         2,
-        3,
+        4,
+        6,
+        8
+      ],
+      "fraction": 0.25,
+      "name": "stage_3__2_4_6_8",
+      "weights": [
+        0.1,
+        0.15,
+        0.25,
+        0.5
+      ]
+    },
+    {
+      "counts": [
+        2,
         4,
         6,
         8
       ],
       "fraction": 0.3,
-      "name": "stage_4__2_3_4_6_8",
+      "name": "stage_4__2_4_6_8",
       "weights": [
-        0.08,
-        0.12,
-        0.18,
-        0.25,
-        0.37
+        0.05,
+        0.1,
+        0.2,
+        0.65
       ]
     }
   ],
@@ -86,9 +84,22 @@
   "task_type": "dynamic_team",
   "test_rollouts": 5,
   "test_seed_offset": 20000,
+  "train_counts": [
+    2,
+    4,
+    6,
+    8
+  ],
   "train_max_agents": 8,
+  "validation_counts": [
+    3,
+    5
+  ],
   "validation_rollouts": 3,
   "validation_seed_offset": 10000,
+  "test_counts": [
+    10
+  ],
   "video_counts": [
     2,
     4,
