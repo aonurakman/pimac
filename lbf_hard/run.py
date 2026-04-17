@@ -26,6 +26,7 @@ from lbf_hard.utils import (
     close_env_cache,
     evaluate_one_count,
     get_or_create_env,
+    grouped_eval_metrics,
     is_checkpoint_selection_eligible,
     pad_vector,
     plot_training_dashboard,
@@ -207,7 +208,17 @@ def make_env(task_config: dict, seed: int, n_agents: int, render_mode: str | Non
     except Exception as exc:  # pragma: no cover
         raise ImportError("Level-Based Foraging is required. Install `lbforaging==2.0.0`.") from exc
 
-    env_id = str(task_config["env_id_template"]).format(n_agents=int(n_agents))
+    food_count_by_agents = {
+        int(agent_count): int(food_count)
+        for agent_count, food_count in dict(task_config["food_count_by_agents"]).items()
+    }
+    if int(n_agents) not in food_count_by_agents:
+        raise KeyError(f"Missing food_count_by_agents entry for n_agents={int(n_agents)}.")
+    max_food_slots = max(food_count_by_agents.values())
+    env_id = str(task_config["env_id_template"]).format(
+        n_agents=int(n_agents),
+        n_food=int(food_count_by_agents[int(n_agents)]),
+    )
     adapted_env = LBFParallelAdapter(
         gym.make(
             env_id,
@@ -220,7 +231,8 @@ def make_env(task_config: dict, seed: int, n_agents: int, render_mode: str | Non
     wrapped_env = FixedEntityObservationWrapper(
         adapted_env,
         max_agents=int(task_config["max_agents"]),
-        max_food=int(adapted_env.env.unwrapped.max_num_food),
+        env_food=int(adapted_env.env.unwrapped.max_num_food),
+        max_food_slots=int(max_food_slots),
         sight=int(adapted_env.env.unwrapped.sight),
     )
     wrapped_env.reset(seed=seed)
@@ -250,8 +262,7 @@ def prepare_observation(raw_obs: np.ndarray, env_spec: ParallelEnvSpec) -> np.nd
 
 def summarize_episode_return(total_reward_sum: float, agent_count: int) -> float:
     """Return the scalar episode score used by this task."""
-    del agent_count
-    return float(total_reward_sum)
+    return float(total_reward_sum) / float(max(1, agent_count))
 
 
 def cooperative_team_reward_dict(rewards: dict[str, float], agent_ids: list[str]) -> tuple[dict[str, float], float]:
@@ -410,7 +421,7 @@ def run_task(
 
                 eligible_results = eval_results if is_checkpoint_selection_eligible(task_config, episode_index + 1, curriculum_windows) else []
                 if eligible_results:
-                    score = float(np.mean([eval_result.return_mean for eval_result in eligible_results]))
+                    score = float(grouped_eval_metrics(task_config, eligible_results)["selection_score"])
                     if score > (best_eval + float(task_config["min_improve"])):
                         learner.save_checkpoint(best_ckpt_path)
                         best_eval = score

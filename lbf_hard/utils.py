@@ -40,34 +40,35 @@ def pad_vector(vec: np.ndarray, target_dim: int) -> np.ndarray:
 class FixedEntityObservationWrapper:
     """Convert native LBF vectors into a fixed-slot local entity observation."""
 
-    def __init__(self, env, *, max_agents: int, max_food: int, sight: int):
+    def __init__(self, env, *, max_agents: int, env_food: int, max_food_slots: int, sight: int):
         self.env = env
         self.possible_agents = list(env.possible_agents)
         self.max_agents = int(max_agents)
-        self.max_food = int(max_food)
+        self.env_food = int(env_food)
+        self.max_food_slots = int(max_food_slots)
         self.sight = int(sight)
         self._coord_sentinel = float(-(self.sight + 1))
         self._entity_sentinel = np.asarray(
             [self._coord_sentinel, self._coord_sentinel, 0.0],
             dtype=np.float32,
         )
-        self._observation_size = 1 + (3 * self.max_food) + (3 * max(0, self.max_agents - 1))
+        self._observation_size = 1 + (3 * self.max_food_slots) + (3 * max(0, self.max_agents - 1))
 
         raw_space = env.observation_space(self.possible_agents[0])
         raw_high = np.asarray(raw_space.high, dtype=np.float32).reshape(-1)
-        max_food_level = float(np.max(raw_high[2 : (3 * self.max_food) : 3]))
-        player_start = 3 * self.max_food
+        max_food_level = float(np.max(raw_high[2 : (3 * self.env_food) : 3]))
+        player_start = 3 * self.env_food
         max_player_level = float(np.max(raw_high[player_start + 2 :: 3]))
 
         low = np.full(self._observation_size, self._coord_sentinel, dtype=np.float32)
         high = np.full(self._observation_size, float(self.sight), dtype=np.float32)
         low[0] = 0.0
         high[0] = max_player_level
-        for slot_index in range(self.max_food):
+        for slot_index in range(self.max_food_slots):
             base = 1 + (3 * slot_index)
             low[base : base + 3] = self._entity_sentinel
             high[base : base + 3] = (float(self.sight), float(self.sight), max_food_level)
-        teammate_offset = 1 + (3 * self.max_food)
+        teammate_offset = 1 + (3 * self.max_food_slots)
         for slot_index in range(max(0, self.max_agents - 1)):
             base = teammate_offset + (3 * slot_index)
             low[base : base + 3] = self._entity_sentinel
@@ -97,13 +98,13 @@ class FixedEntityObservationWrapper:
     def _encode_observation(self, raw_obs: np.ndarray) -> np.ndarray:
         flat = np.asarray(raw_obs, dtype=np.float32).reshape(-1)
         food_entities: list[tuple[float, float, float]] = []
-        for slot_index in range(self.max_food):
+        for slot_index in range(self.env_food):
             y, x, level = flat[(3 * slot_index) : (3 * slot_index) + 3]
             if y >= 0.0 and x >= 0.0:
                 food_entities.append(self._relative_triplet(y, x, level))
         food_entities.sort(key=self._entity_sort_key)
 
-        player_section = flat[3 * self.max_food :]
+        player_section = flat[3 * self.env_food :]
         player_slots = player_section.shape[0] // 3
         self_level = 0.0
         teammate_entities: list[tuple[float, float, float]] = []
@@ -119,7 +120,7 @@ class FixedEntityObservationWrapper:
         encoded = np.empty(self._observation_size, dtype=np.float32)
         encoded[0] = float(self_level)
         cursor = 1
-        for slot_index in range(self.max_food):
+        for slot_index in range(self.max_food_slots):
             encoded[cursor : cursor + 3] = (
                 food_entities[slot_index] if slot_index < len(food_entities) else self._entity_sentinel
             )
@@ -215,6 +216,9 @@ def _configured_agent_counts(task_config: dict) -> list[int]:
         int(task_config["train_max_agents"]),
         int(task_config["max_agents"]),
         *(int(value) for value in task_config.get("eval_counts", [])),
+        *(int(value) for value in task_config.get("train_counts", [])),
+        *(int(value) for value in task_config.get("validation_counts", [])),
+        *(int(value) for value in task_config.get("test_counts", [])),
         *(int(value) for value in task_config.get("video_counts", [])),
     }
     for stage in task_config.get("curriculum", []):
@@ -344,6 +348,51 @@ def _mean_or_nan(values: np.ndarray) -> float:
     return float(np.mean(values)) if values.size else float("nan")
 
 
+def _configured_train_counts(task_config: dict) -> tuple[int, ...]:
+    """Return the counts that are considered seen during training."""
+    configured = task_config.get("train_counts")
+    if configured:
+        return tuple(int(value) for value in configured)
+    counts: set[int] = set()
+    for stage in task_config.get("curriculum", []):
+        counts.update(int(value) for value in stage.get("counts", []))
+    return tuple(sorted(counts))
+
+
+def _configured_validation_counts(task_config: dict) -> tuple[int, ...]:
+    """Return the counts used for sweep/checkpoint validation."""
+    configured = task_config.get("validation_counts")
+    if configured:
+        return tuple(int(value) for value in configured)
+    train_counts = set(_configured_train_counts(task_config))
+    return tuple(int(value) for value in task_config.get("eval_counts", []) if int(value) not in train_counts)
+
+
+def _configured_test_counts(task_config: dict) -> tuple[int, ...]:
+    """Return the counts reserved for final held-out evaluation."""
+    configured = task_config.get("test_counts")
+    if configured:
+        return tuple(int(value) for value in configured)
+    return tuple()
+
+
+def _split_mean(count_to_mean: dict[int, float], counts: Sequence[int]) -> float:
+    """Compute the mean return over one explicit count split."""
+    values = np.asarray([count_to_mean[count] for count in counts if count in count_to_mean], dtype=np.float64)
+    return _mean_or_nan(values)
+
+
+def _selection_score(*, train_counts_mean: float, validation_counts_mean: float, overall_eval_mean: float) -> float:
+    """Score checkpoints by the weaker of seen-count competence and unseen-count validation."""
+    if np.isfinite(train_counts_mean) and np.isfinite(validation_counts_mean):
+        return float(min(train_counts_mean, validation_counts_mean))
+    if np.isfinite(validation_counts_mean):
+        return float(validation_counts_mean)
+    if np.isfinite(train_counts_mean):
+        return float(train_counts_mean)
+    return float(overall_eval_mean)
+
+
 def grouped_eval_metrics(task_config: dict, eval_results: Sequence[EvalResult]) -> dict[str, float]:
     """Aggregate one checkpoint's per-count results into the summary used in reports."""
     if not eval_results:
@@ -357,18 +406,26 @@ def grouped_eval_metrics(task_config: dict, eval_results: Sequence[EvalResult]) 
             "worst_count_return": float("nan"),
             "generalization_gap": float("nan"),
             "frontier_gap": float("nan"),
+            "train_counts_mean": float("nan"),
+            "validation_counts_mean": float("nan"),
+            "test_counts_mean": float("nan"),
+            "selection_score": float("nan"),
         }
 
     eval_counts = tuple(int(value) for value in task_config["eval_counts"])
     count_to_mean = {eval_result.n_agents: float(eval_result.return_mean) for eval_result in eval_results}
-    ordered_means = np.asarray([count_to_mean[count] for count in eval_counts], dtype=np.float32)
-    small = np.asarray([count_to_mean[count] for count in eval_counts if count <= 3], dtype=np.float32)
-    mid = np.asarray([count_to_mean[count] for count in eval_counts if 4 <= count <= 7], dtype=np.float32)
-    large = np.asarray([count_to_mean[count] for count in eval_counts if count >= 8], dtype=np.float32)
+    ordered_means = np.asarray([count_to_mean[count] for count in eval_counts], dtype=np.float64)
+    small = np.asarray([count_to_mean[count] for count in eval_counts if count <= 3], dtype=np.float64)
+    mid = np.asarray([count_to_mean[count] for count in eval_counts if 4 <= count <= 7], dtype=np.float64)
+    large = np.asarray([count_to_mean[count] for count in eval_counts if count >= 8], dtype=np.float64)
     best = float(np.max(ordered_means))
     worst = float(np.min(ordered_means))
+    overall_eval_mean = float(np.mean(ordered_means))
+    train_counts_mean = _split_mean(count_to_mean, _configured_train_counts(task_config))
+    validation_counts_mean = _split_mean(count_to_mean, _configured_validation_counts(task_config))
+    test_counts_mean = _split_mean(count_to_mean, _configured_test_counts(task_config))
     return {
-        "overall_eval_mean": float(np.mean(ordered_means)),
+        "overall_eval_mean": overall_eval_mean,
         "overall_eval_std": float(np.std(ordered_means)),
         "small_team_mean": _mean_or_nan(small),
         "mid_team_mean": _mean_or_nan(mid),
@@ -377,6 +434,14 @@ def grouped_eval_metrics(task_config: dict, eval_results: Sequence[EvalResult]) 
         "worst_count_return": worst,
         "generalization_gap": float(best - worst),
         "frontier_gap": _mean_or_nan(large) - _mean_or_nan(small),
+        "train_counts_mean": train_counts_mean,
+        "validation_counts_mean": validation_counts_mean,
+        "test_counts_mean": test_counts_mean,
+        "selection_score": _selection_score(
+            train_counts_mean=train_counts_mean,
+            validation_counts_mean=validation_counts_mean,
+            overall_eval_mean=overall_eval_mean,
+        ),
     }
 
 
@@ -412,6 +477,10 @@ def _validation_summary(task_config: dict, eval_results: Sequence[EvalResult]) -
     if not eval_results:
         return {
             "best_validation_mean": float("nan"),
+            "best_validation_selection_score": float("nan"),
+            "best_validation_train_counts_mean": float("nan"),
+            "best_validation_validation_counts_mean": float("nan"),
+            "best_validation_test_counts_mean": float("nan"),
             "best_validation_episode": -1,
             "convergence_episode_90pct": -1,
         }
@@ -421,20 +490,23 @@ def _validation_summary(task_config: dict, eval_results: Sequence[EvalResult]) -
         grouped_by_checkpoint.setdefault(int(eval_result.checkpoint_episode), []).append(eval_result)
 
     checkpoints = sorted(grouped_by_checkpoint)
-    means = np.asarray(
-        [grouped_eval_metrics(task_config, grouped_by_checkpoint[checkpoint])["overall_eval_mean"] for checkpoint in checkpoints],
-        dtype=np.float32,
-    )
-    best_index = int(np.argmax(means))
-    best_mean = float(means[best_index])
-    threshold = 0.9 * best_mean
+    checkpoint_metrics = [grouped_eval_metrics(task_config, grouped_by_checkpoint[checkpoint]) for checkpoint in checkpoints]
+    scores = np.asarray([metrics["selection_score"] for metrics in checkpoint_metrics], dtype=np.float32)
+    safe_scores = np.where(np.isfinite(scores), scores, -np.inf)
+    best_index = int(np.argmax(safe_scores))
+    best_score = float(scores[best_index])
+    threshold = 0.9 * best_score if np.isfinite(best_score) else float("nan")
     convergence_episode = -1
-    for checkpoint, mean_value in zip(checkpoints, means):
-        if float(mean_value) >= threshold:
+    for checkpoint, score_value in zip(checkpoints, scores):
+        if np.isfinite(threshold) and float(score_value) >= threshold:
             convergence_episode = int(checkpoint)
             break
     return {
-        "best_validation_mean": best_mean,
+        "best_validation_mean": float(checkpoint_metrics[best_index]["overall_eval_mean"]),
+        "best_validation_selection_score": best_score,
+        "best_validation_train_counts_mean": float(checkpoint_metrics[best_index]["train_counts_mean"]),
+        "best_validation_validation_counts_mean": float(checkpoint_metrics[best_index]["validation_counts_mean"]),
+        "best_validation_test_counts_mean": float(checkpoint_metrics[best_index]["test_counts_mean"]),
         "best_validation_episode": int(checkpoints[best_index]),
         "convergence_episode_90pct": int(convergence_episode),
     }
@@ -463,18 +535,32 @@ def build_summary(
     filtered_validation_summary = _validation_summary(task_config, eligible_validation_results)
     final_test_summary = grouped_eval_metrics(task_config, final_checkpoint_test_results)
     uses_validation_selection = bool(validation_results)
+    selected_test_summary = final_test_summary
+    selected_checkpoint = "final_checkpoint"
     test_summary = {
         "final_checkpoint": final_test_summary,
-        "objective_score": float(final_test_summary["overall_eval_mean"]),
+        "objective_score": float(final_test_summary["selection_score"]),
+        "overall_eval_mean": float(final_test_summary["overall_eval_mean"]),
+        "train_counts_mean": float(final_test_summary["train_counts_mean"]),
+        "validation_counts_mean": float(final_test_summary["validation_counts_mean"]),
+        "test_counts_mean": float(final_test_summary["test_counts_mean"]),
+        "selection_checkpoint": selected_checkpoint,
         "best_vs_final_drop": 0.0,
     }
     if uses_validation_selection:
         best_test_summary = grouped_eval_metrics(task_config, best_checkpoint_test_results)
+        selected_test_summary = best_test_summary
+        selected_checkpoint = "best_checkpoint"
         test_summary = {
             "best_checkpoint": best_test_summary,
             "final_checkpoint": final_test_summary,
-            "objective_score": float(0.7 * best_test_summary["overall_eval_mean"] + 0.3 * final_test_summary["overall_eval_mean"]),
-            "best_vs_final_drop": float(best_test_summary["overall_eval_mean"] - final_test_summary["overall_eval_mean"]),
+            "objective_score": float(best_test_summary["selection_score"]),
+            "overall_eval_mean": float(best_test_summary["overall_eval_mean"]),
+            "train_counts_mean": float(best_test_summary["train_counts_mean"]),
+            "validation_counts_mean": float(best_test_summary["validation_counts_mean"]),
+            "test_counts_mean": float(best_test_summary["test_counts_mean"]),
+            "selection_checkpoint": selected_checkpoint,
+            "best_vs_final_drop": float(best_test_summary["selection_score"] - final_test_summary["selection_score"]),
         }
 
     return {
@@ -482,6 +568,9 @@ def build_summary(
         "algorithm": algorithm,
         "seed": int(seed),
         "episodes": int(episodes),
+        "train_counts": list(_configured_train_counts(task_config)),
+        "validation_counts": list(_configured_validation_counts(task_config)),
+        "test_counts": list(_configured_test_counts(task_config)),
         "train_agent_count_max": int(task_config["train_max_agents"]),
         "eval_agent_counts": [int(value) for value in task_config["eval_counts"]],
         "curriculum": [
@@ -517,6 +606,7 @@ def build_summary(
             "selection_eligible_checkpoint_count": int(len({eval_result.checkpoint_episode for eval_result in eligible_validation_results})),
             "logged_checkpoint_count": int(len({eval_result.checkpoint_episode for eval_result in validation_results})),
             "logged_best_validation_mean": float(logged_validation_summary["best_validation_mean"]),
+            "logged_best_validation_selection_score": float(logged_validation_summary["best_validation_selection_score"]),
             "logged_best_validation_episode": int(logged_validation_summary["best_validation_episode"]),
         },
         "extra_metrics": dict(sorted((extra_metrics or {}).items())),
