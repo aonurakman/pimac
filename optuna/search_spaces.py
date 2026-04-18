@@ -116,7 +116,11 @@ def _resolve_episode_horizon(task_config: dict[str, Any]) -> int:
         return max(1, int(task_config["max_steps"]))
     if "max_cycles" in task_config:
         return max(1, int(task_config["max_cycles"]))
-    raise ValueError("Task config must define either 'max_steps' or 'max_cycles' for budget-normalized decay.")
+    if "max_episode_steps" in task_config:
+        return max(1, int(task_config["max_episode_steps"]))
+    raise ValueError(
+        "Task config must define either 'max_steps', 'max_cycles', or 'max_episode_steps' for budget-normalized decay."
+    )
 
 
 def _apply_budget_normalized_aliases(config: dict[str, Any], *, task_config: dict[str, Any]) -> None:
