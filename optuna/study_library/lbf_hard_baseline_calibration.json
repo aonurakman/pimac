@@ -1,0 +1,349 @@
+{
+  "notes": [
+    "Baseline-only hard-task calibration sweep for lbf_hard.",
+    "Tunes IPPO, IQL, VDN, and QMIX independently with the same per-trial task structure as the ongoing hard PIMAC sweeps.",
+    "No chaining between algorithms.",
+    "Run with --parallel-jobs 4."
+  ],
+  "task": "lbf_hard",
+  "seed": 42,
+  "task_overrides": {
+    "episodes": 6000,
+    "eval_every_episodes": 0,
+    "test_rollouts": 30
+  },
+  "algorithms": [
+    {
+      "name": "ippo",
+      "trials": 36,
+      "base_config": "lbf_hard/configs/ippo/default.json",
+      "search": {
+        "actor_arch": {
+          "type": "categorical",
+          "values": [
+            { "num_hidden": 1, "widths": [64, 64] },
+            { "num_hidden": 2, "widths": [64, 128, 64] },
+            { "num_hidden": 2, "widths": [128, 128, 128] },
+            { "num_hidden": 2, "widths": [128, 256, 128] },
+            { "num_hidden": 3, "widths": [96, 128, 128, 96] }
+          ],
+          "merge": true
+        },
+        "lr": {
+          "type": "float",
+          "low": 0.00005,
+          "high": 0.0015,
+          "log": true
+        },
+        "batch_size": {
+          "type": "categorical",
+          "values": [64, 128, 256]
+        },
+        "update_every_episodes": {
+          "type": "categorical",
+          "values": [2, 4, 8, 16]
+        },
+        "num_epochs": {
+          "type": "categorical",
+          "values": [2, 4, 6, 8]
+        },
+        "rnn_hidden_dim": {
+          "type": "categorical",
+          "values": [64, 128, 192]
+        },
+        "clip_eps": {
+          "type": "categorical",
+          "values": [0.1, 0.15, 0.2, 0.25, 0.3]
+        },
+        "gamma": {
+          "type": "categorical",
+          "values": [0.97, 0.985, 0.99]
+        },
+        "gae_lambda": {
+          "type": "categorical",
+          "values": [0.9, 0.93, 0.95, 0.97, 0.99]
+        },
+        "entropy_coef": {
+          "type": "float",
+          "low": 0.0001,
+          "high": 0.02,
+          "log": true
+        },
+        "value_coef": {
+          "type": "categorical",
+          "values": [0.25, 0.5, 1.0, 2.0]
+        },
+        "max_grad_norm": {
+          "type": "categorical",
+          "values": [0.5, 1.0, 2.0, 5.0]
+        }
+      }
+    },
+    {
+      "name": "iql",
+      "trials": 36,
+      "base_config": "lbf_hard/configs/iql/default.json",
+      "search": {
+        "q_arch": {
+          "type": "categorical",
+          "values": [
+            { "num_hidden": 1, "widths": [64, 64] },
+            { "num_hidden": 2, "widths": [64, 128, 64] },
+            { "num_hidden": 2, "widths": [128, 128, 128] },
+            { "num_hidden": 2, "widths": [128, 256, 128] },
+            { "num_hidden": 3, "widths": [96, 128, 128, 96] }
+          ],
+          "merge": true
+        },
+        "lr": {
+          "type": "float",
+          "low": 0.00005,
+          "high": 0.0015,
+          "log": true
+        },
+        "batch_size": {
+          "type": "categorical",
+          "values": [64, 128, 256]
+        },
+        "num_epochs": {
+          "type": "categorical",
+          "values": [1, 2, 4]
+        },
+        "rnn_hidden_dim": {
+          "type": "categorical",
+          "values": [0, 32, 64, 128]
+        },
+        "seq_len": {
+          "type": "categorical",
+          "values": [4, 8, 16]
+        },
+        "gamma": {
+          "type": "categorical",
+          "values": [0.97, 0.985, 0.99]
+        },
+        "target_update_every": {
+          "type": "categorical",
+          "values": [100, 200, 400, 800]
+        },
+        "double_dqn": {
+          "type": "categorical",
+          "values": [true, false]
+        },
+        "tau": {
+          "type": "categorical",
+          "values": [0.05, 0.1, 0.25, 0.5, 1.0]
+        },
+        "temp_init": {
+          "type": "categorical",
+          "values": [1.0, 1.5, 2.0]
+        },
+        "temp_min": {
+          "type": "categorical",
+          "values": [0.05, 0.1, 0.2]
+        },
+        "learn_every_steps": {
+          "type": "categorical",
+          "values": [1, 4, 8]
+        },
+        "max_grad_norm": {
+          "type": "categorical",
+          "values": [5.0, 10.0, 20.0]
+        },
+        "temp_gap_fraction_at_budget": {
+          "type": "categorical",
+          "values": [0.01, 0.03, 0.1, 0.2]
+        }
+      }
+    },
+    {
+      "name": "vdn",
+      "trials": 36,
+      "base_config": "lbf_hard/configs/vdn/default.json",
+      "search": {
+        "q_arch": {
+          "type": "categorical",
+          "values": [
+            { "num_hidden": 1, "widths": [64, 64] },
+            { "num_hidden": 2, "widths": [64, 128, 64] },
+            { "num_hidden": 2, "widths": [128, 128, 128] },
+            { "num_hidden": 2, "widths": [128, 256, 128] },
+            { "num_hidden": 3, "widths": [96, 128, 128, 96] }
+          ],
+          "merge": true
+        },
+        "lr": {
+          "type": "float",
+          "low": 0.00005,
+          "high": 0.0015,
+          "log": true
+        },
+        "batch_size": {
+          "type": "categorical",
+          "values": [64, 128, 256]
+        },
+        "num_epochs": {
+          "type": "categorical",
+          "values": [1, 2, 4]
+        },
+        "rnn_hidden_dim": {
+          "type": "categorical",
+          "values": [32, 64, 128]
+        },
+        "gamma": {
+          "type": "categorical",
+          "values": [0.97, 0.985, 0.99]
+        },
+        "target_update_every": {
+          "type": "categorical",
+          "values": [100, 200, 400, 800]
+        },
+        "tau": {
+          "type": "categorical",
+          "values": [0.05, 0.1, 0.25, 0.5, 1.0]
+        },
+        "temp_init": {
+          "type": "categorical",
+          "values": [1.0, 1.5, 2.0]
+        },
+        "temp_min": {
+          "type": "categorical",
+          "values": [0.05, 0.1, 0.2]
+        },
+        "learn_every_steps": {
+          "type": "categorical",
+          "values": [1, 4, 8]
+        },
+        "max_grad_norm": {
+          "type": "categorical",
+          "values": [5.0, 10.0, 20.0]
+        },
+        "temp_gap_fraction_at_budget": {
+          "type": "categorical",
+          "values": [0.01, 0.03, 0.1, 0.2]
+        },
+        "double_q": {
+          "type": "categorical",
+          "values": [true, false]
+        },
+        "use_huber_loss": {
+          "type": "categorical",
+          "values": [true, false]
+        },
+        "normalize_by_active": {
+          "type": "categorical",
+          "values": [true, false]
+        },
+        "q_tot_clip": {
+          "type": "categorical",
+          "values": [null, 20.0, 50.0]
+        },
+        "share_parameters": {
+          "type": "constant",
+          "value": true
+        }
+      }
+    },
+    {
+      "name": "qmix",
+      "trials": 36,
+      "base_config": "lbf_hard/configs/qmix/default.json",
+      "search": {
+        "q_arch": {
+          "type": "categorical",
+          "values": [
+            { "num_hidden": 1, "widths": [64, 64] },
+            { "num_hidden": 2, "widths": [64, 128, 64] },
+            { "num_hidden": 2, "widths": [128, 128, 128] },
+            { "num_hidden": 2, "widths": [128, 256, 128] },
+            { "num_hidden": 3, "widths": [96, 128, 128, 96] }
+          ],
+          "merge": true
+        },
+        "lr": {
+          "type": "float",
+          "low": 0.00005,
+          "high": 0.0015,
+          "log": true
+        },
+        "batch_size": {
+          "type": "categorical",
+          "values": [64, 128, 256]
+        },
+        "num_epochs": {
+          "type": "categorical",
+          "values": [1, 2, 4]
+        },
+        "rnn_hidden_dim": {
+          "type": "categorical",
+          "values": [32, 64, 128]
+        },
+        "gamma": {
+          "type": "categorical",
+          "values": [0.97, 0.985, 0.99]
+        },
+        "target_update_every": {
+          "type": "categorical",
+          "values": [100, 200, 400, 800]
+        },
+        "tau": {
+          "type": "categorical",
+          "values": [0.05, 0.1, 0.25, 0.5, 1.0]
+        },
+        "temp_init": {
+          "type": "categorical",
+          "values": [1.0, 1.5, 2.0]
+        },
+        "temp_min": {
+          "type": "categorical",
+          "values": [0.05, 0.1, 0.2]
+        },
+        "learn_every_steps": {
+          "type": "categorical",
+          "values": [1, 4, 8]
+        },
+        "max_grad_norm": {
+          "type": "categorical",
+          "values": [5.0, 10.0, 20.0]
+        },
+        "temp_gap_fraction_at_budget": {
+          "type": "categorical",
+          "values": [0.01, 0.03, 0.1, 0.2]
+        },
+        "double_q": {
+          "type": "categorical",
+          "values": [true, false]
+        },
+        "use_huber_loss": {
+          "type": "categorical",
+          "values": [true, false]
+        },
+        "mixing_embed_dim": {
+          "type": "categorical",
+          "values": [32, 64, 128]
+        },
+        "mixing_widths": {
+          "type": "categorical",
+          "values": [
+            [64],
+            [128],
+            [128, 128],
+            [256, 128]
+          ],
+          "length_target": "mixing_num_hidden"
+        },
+        "mixing_weight_clip": {
+          "type": "categorical",
+          "values": [null, 5.0, 10.0]
+        },
+        "q_tot_clip": {
+          "type": "categorical",
+          "values": [null, 20.0, 50.0]
+        },
+        "share_parameters": {
+          "type": "constant",
+          "value": true
+        }
+      }
+    }
+  ]
+}
