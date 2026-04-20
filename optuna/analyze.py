@@ -7,6 +7,7 @@ import importlib
 import json
 import shutil
 import sys
+from collections import defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Optional, Sequence
@@ -23,6 +24,14 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from algorithms.registry import ALGORITHM_ORDER, get_algorithm_class
 from optuna_utils import LEARNED_ALGORITHM_ORDER, TASK_SPECS, discover_task_ids, get_task_spec, read_csv_rows, safe_float
+from plotting import (
+    build_grouped_pca_rows,
+    plot_alignment_heatmap,
+    plot_dynamic_trial_return_boxplots,
+    plot_gate_agent_heatmap,
+    plot_gate_alignment_3d,
+    plot_pca_projection_grid,
+)
 from utils import OPTUNA_RESULTS_ROOT, load_json, save_gif, write_csv, write_json
 
 
@@ -96,7 +105,13 @@ def _resolve_recorded_suite_path(recorded_path: str | Path, *, suite_id: str, re
     return rebased_candidates[0] if rebased_candidates else candidate
 
 
-def discover_best_runs(*, suite_id: str, task_id: str, results_root: Path = OPTUNA_RESULTS_ROOT) -> list[BestRun]:
+def discover_ranked_runs(
+    *,
+    suite_id: str,
+    task_id: str,
+    results_root: Path = OPTUNA_RESULTS_ROOT,
+    top_k: int = 1,
+) -> list[BestRun]:
     study_dir = Path(results_root) / suite_id / "studies" / task_id
     discovered: list[BestRun] = []
     for algorithm in LEARNED_ALGORITHM_ORDER:
@@ -106,52 +121,56 @@ def discover_best_runs(*, suite_id: str, task_id: str, results_root: Path = OPTU
         rows = read_csv_rows(leaderboard_path)
         if not rows:
             continue
-        ranked_rows = sorted((int(row["rank"]), row) for row in rows if row.get("rank"))
+        ranked_rows = sorted((int(row["rank"]), row) for row in rows if row.get("rank"))[: max(1, int(top_k))]
         if not ranked_rows:
             continue
-        row = ranked_rows[0][1]
-        summary_path = None
-        if row.get("summary_path"):
-            summary_path = _resolve_recorded_suite_path(
-                row["summary_path"],
+        for _, row in ranked_rows:
+            summary_path = None
+            if row.get("summary_path"):
+                summary_path = _resolve_recorded_suite_path(
+                    row["summary_path"],
+                    suite_id=suite_id,
+                    results_root=results_root,
+                )
+            run_output_dir = _resolve_recorded_suite_path(
+                row["run_output_dir"],
                 suite_id=suite_id,
                 results_root=results_root,
             )
-        run_output_dir = _resolve_recorded_suite_path(
-            row["run_output_dir"],
-            suite_id=suite_id,
-            results_root=results_root,
-        )
-        if summary_path is None:
-            summary_path = run_output_dir / "summary.json"
-        elif not run_output_dir.is_dir():
-            run_output_dir = summary_path.parent
-        if not summary_path.is_file():
-            summary_path = run_output_dir / "summary.json"
-        config_snapshot_path = run_output_dir / "config_snapshot.json"
-        if not (summary_path.is_file() and config_snapshot_path.is_file()):
-            continue
-        checkpoint_path = run_output_dir / "best_checkpoint.pt"
-        if not checkpoint_path.is_file():
-            checkpoint_path = run_output_dir / "final_checkpoint.pt"
-        if not checkpoint_path.is_file():
-            continue
-        discovered.append(
-            BestRun(
-                algorithm=algorithm,
-                rank=int(row["rank"]),
-                trial_number=int(row["trial_number"]),
-                objective_score=float(row["objective_score"]),
-                leaderboard_path=leaderboard_path,
-                run_output_dir=run_output_dir,
-                checkpoint_path=checkpoint_path,
-                summary_path=summary_path,
-                config_snapshot_path=config_snapshot_path,
-                config_snapshot=load_json(config_snapshot_path),
-                effective_config=json.loads(row["effective_config_json"]),
+            if summary_path is None:
+                summary_path = run_output_dir / "summary.json"
+            elif not run_output_dir.is_dir():
+                run_output_dir = summary_path.parent
+            if not summary_path.is_file():
+                summary_path = run_output_dir / "summary.json"
+            config_snapshot_path = run_output_dir / "config_snapshot.json"
+            if not (summary_path.is_file() and config_snapshot_path.is_file()):
+                continue
+            checkpoint_path = run_output_dir / "best_checkpoint.pt"
+            if not checkpoint_path.is_file():
+                checkpoint_path = run_output_dir / "final_checkpoint.pt"
+            if not checkpoint_path.is_file():
+                continue
+            discovered.append(
+                BestRun(
+                    algorithm=algorithm,
+                    rank=int(row["rank"]),
+                    trial_number=int(row["trial_number"]),
+                    objective_score=float(row["objective_score"]),
+                    leaderboard_path=leaderboard_path,
+                    run_output_dir=run_output_dir,
+                    checkpoint_path=checkpoint_path,
+                    summary_path=summary_path,
+                    config_snapshot_path=config_snapshot_path,
+                    config_snapshot=load_json(config_snapshot_path),
+                    effective_config=json.loads(row["effective_config_json"]),
+                )
             )
-        )
     return discovered
+
+
+def discover_best_runs(*, suite_id: str, task_id: str, results_root: Path = OPTUNA_RESULTS_ROOT) -> list[BestRun]:
+    return discover_ranked_runs(suite_id=suite_id, task_id=task_id, results_root=results_root, top_k=1)
 
 
 def _transform_obs(task_script, env_spec, obs: np.ndarray) -> np.ndarray:
@@ -175,6 +194,187 @@ def _task_is_dynamic(task_config: dict[str, Any]) -> bool:
 def _video_counts_for_task(task_config: dict[str, Any]) -> list[int]:
     """Resolve the default video counts for one task config."""
     return [int(value) for value in task_config.get("video_counts", DEFAULT_VIDEO_DYNAMIC_COUNTS)]
+
+
+def _count_split_name(task_config: dict[str, Any], n_agents: int) -> str:
+    n_agents = int(n_agents)
+    train_counts = {int(value) for value in task_config.get("train_counts", [])}
+    validation_counts = {int(value) for value in task_config.get("validation_counts", [])}
+    test_counts = {int(value) for value in task_config.get("test_counts", [])}
+    if n_agents in train_counts:
+        return "train"
+    if n_agents in validation_counts:
+        return "validation"
+    if n_agents in test_counts:
+        return "test"
+    return "other"
+
+
+def _resolve_trial_directory(row: dict[str, str], *, suite_id: str, results_root: Path) -> Path | None:
+    if row.get("run_output_dir"):
+        run_output_dir = _resolve_recorded_suite_path(row["run_output_dir"], suite_id=suite_id, results_root=results_root)
+        if run_output_dir.is_dir():
+            return run_output_dir
+    if row.get("summary_path"):
+        summary_path = _resolve_recorded_suite_path(row["summary_path"], suite_id=suite_id, results_root=results_root)
+        if summary_path.is_file():
+            return summary_path.parent
+    return None
+
+
+def _select_eval_rows_for_final_checkpoint(eval_rows: Sequence[dict[str, str]]) -> list[dict[str, str]]:
+    if not eval_rows:
+        return []
+    priority_by_phase = {
+        "final_checkpoint_test": 0,
+        "final_checkpoint": 1,
+        "best_checkpoint_test": 2,
+    }
+    selected_by_count: dict[int, tuple[int, dict[str, str]]] = {}
+    for row in eval_rows:
+        if not row.get("n_agents"):
+            continue
+        n_agents = int(row["n_agents"])
+        phase = str(row.get("phase", ""))
+        priority = priority_by_phase.get(phase, 10)
+        previous = selected_by_count.get(n_agents)
+        if previous is None or priority < previous[0]:
+            selected_by_count[n_agents] = (priority, row)
+    return [selected_by_count[n_agents][1] for n_agents in sorted(selected_by_count)]
+
+
+def _collect_dynamic_trial_return_rows(
+    *,
+    suite_id: str,
+    task_id: str,
+    task_config: dict[str, Any],
+    results_root: Path,
+) -> list[dict[str, Any]]:
+    study_dir = Path(results_root) / suite_id / "studies" / task_id
+    trial_rows: list[dict[str, Any]] = []
+    for algorithm in LEARNED_ALGORITHM_ORDER:
+        trials_path = study_dir / f"{algorithm}_trials.csv"
+        if not trials_path.is_file():
+            continue
+        for row in read_csv_rows(trials_path):
+            if str(row.get("state", "")) != "COMPLETE":
+                continue
+            trial_dir = _resolve_trial_directory(row, suite_id=suite_id, results_root=results_root)
+            if trial_dir is None:
+                continue
+            eval_path = trial_dir / "eval_by_count.csv"
+            if not eval_path.is_file():
+                continue
+            eval_rows = _select_eval_rows_for_final_checkpoint(read_csv_rows(eval_path))
+            for eval_row in eval_rows:
+                n_agents = int(eval_row["n_agents"])
+                trial_rows.append(
+                    {
+                        "algorithm": algorithm,
+                        "trial_number": int(row["trial_number"]),
+                        "objective_score": float(row["objective_score"]),
+                        "n_agents": n_agents,
+                        "split": _count_split_name(task_config, n_agents),
+                        "return_mean": float(eval_row["return_mean"]),
+                        "return_std": safe_float(eval_row.get("return_std")),
+                        "rollout_count": int(eval_row["rollout_count"]) if eval_row.get("rollout_count") else None,
+                    }
+                )
+    return trial_rows
+
+
+def _run_label(best_run: BestRun) -> str:
+    return f"{best_run.algorithm} r{best_run.rank} (trial {best_run.trial_number})"
+
+
+def _build_trial_count_summary_rows(student_rows: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(list)
+    for row in student_rows:
+        grouped[(str(row["run_label"]), int(row["n_agents"]))].append(row)
+
+    summary_rows: list[dict[str, Any]] = []
+    for (run_label, n_agents), group_rows in sorted(grouped.items(), key=lambda item: (str(item[0][0]), int(item[0][1]))):
+        first = group_rows[0]
+        gate_values = [float(row["gate"]) for row in group_rows if row.get("gate") is not None]
+        delta_w_values = [float(row["delta_w_norm"]) for row in group_rows if row.get("delta_w_norm") is not None]
+        delta_b_values = [float(row["delta_b_norm"]) for row in group_rows if row.get("delta_b_norm") is not None]
+        ctx_signal_values = [
+            float(
+                row.get(
+                    "ctx_signal_mean",
+                    row.get("ctx_reliance_mean", row.get("ctx_log_uncertainty_mean", row.get("ctx_logvar_mean"))),
+                )
+            )
+            for row in group_rows
+            if row.get(
+                "ctx_signal_mean",
+                row.get("ctx_reliance_mean", row.get("ctx_log_uncertainty_mean", row.get("ctx_logvar_mean"))),
+            ) is not None
+        ]
+        summary_rows.append(
+            {
+                "algorithm": first["algorithm"],
+                "rank": int(first["rank"]),
+                "trial_number": int(first["trial_number"]),
+                "run_label": run_label,
+                "n_agents": int(n_agents),
+                "samples": int(len(group_rows)),
+                "teacher_alignment_cosine_mean": float(np.mean([float(row["teacher_alignment_cosine"]) for row in group_rows])),
+                "teacher_alignment_mse_mean": float(np.mean([float(row["teacher_alignment_mse"]) for row in group_rows])),
+                "ctx_signal_mean": float(np.mean(ctx_signal_values)) if ctx_signal_values else None,
+                "gate_mean": float(np.mean(gate_values)) if gate_values else None,
+                "gate_std": float(np.std(gate_values)) if gate_values else None,
+                "delta_w_norm_mean": float(np.mean(delta_w_values)) if delta_w_values else None,
+                "delta_b_norm_mean": float(np.mean(delta_b_values)) if delta_b_values else None,
+                "teacher_ctx_norm_mean": float(np.mean([float(row["teacher_ctx_norm"]) for row in group_rows])),
+                "student_ctx_norm_mean": float(np.mean([float(row["student_ctx_norm"]) for row in group_rows])),
+            }
+        )
+    return summary_rows
+
+
+def _build_count_summary_rows(
+    trial_count_rows: Sequence[dict[str, Any]],
+    *,
+    step_rows: Sequence[dict[str, Any]],
+    token_rows: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    step_grouped: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(list)
+    token_grouped: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(list)
+    for row in step_rows:
+        step_grouped[(str(row["algorithm"]), int(row["n_agents"]))].append(row)
+    for row in token_rows:
+        token_grouped[(str(row["algorithm"]), int(row["n_agents"]))].append(row)
+
+    grouped: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(list)
+    for row in trial_count_rows:
+        grouped[(str(row["algorithm"]), int(row["n_agents"]))].append(row)
+
+    summary_rows: list[dict[str, Any]] = []
+    for (algorithm, n_agents), rows_for_count in sorted(grouped.items(), key=lambda item: (str(item[0][0]), int(item[0][1]))):
+        step_group = step_grouped.get((algorithm, n_agents), [])
+        token_group = token_grouped.get((algorithm, n_agents), [])
+        summary_rows.append(
+            {
+                "algorithm": algorithm,
+                "n_agents": int(n_agents),
+                "run_count": int(len(rows_for_count)),
+                "samples_total": int(sum(int(row["samples"]) for row in rows_for_count)),
+                "teacher_alignment_cosine_mean": float(np.mean([float(row["teacher_alignment_cosine_mean"]) for row in rows_for_count])),
+                "teacher_alignment_mse_mean": float(np.mean([float(row["teacher_alignment_mse_mean"]) for row in rows_for_count])),
+                "ctx_signal_mean": float(np.mean([float(row["ctx_signal_mean"]) for row in rows_for_count if row.get("ctx_signal_mean") is not None])) if any(row.get("ctx_signal_mean") is not None for row in rows_for_count) else None,
+                "gate_mean": float(np.mean([float(row["gate_mean"]) for row in rows_for_count if row.get("gate_mean") is not None])) if any(row.get("gate_mean") is not None for row in rows_for_count) else None,
+                "gate_std_mean": float(np.mean([float(row["gate_std"]) for row in rows_for_count if row.get("gate_std") is not None])) if any(row.get("gate_std") is not None for row in rows_for_count) else None,
+                "delta_w_norm_mean": float(np.mean([float(row["delta_w_norm_mean"]) for row in rows_for_count if row.get("delta_w_norm_mean") is not None])) if any(row.get("delta_w_norm_mean") is not None for row in rows_for_count) else None,
+                "delta_b_norm_mean": float(np.mean([float(row["delta_b_norm_mean"]) for row in rows_for_count if row.get("delta_b_norm_mean") is not None])) if any(row.get("delta_b_norm_mean") is not None for row in rows_for_count) else None,
+                "teacher_ctx_norm_mean": float(np.mean([float(row["teacher_ctx_norm_mean"]) for row in rows_for_count])),
+                "student_ctx_norm_mean": float(np.mean([float(row["student_ctx_norm_mean"]) for row in rows_for_count])),
+                "token_norm_mean": float(np.mean([float(row["token_norm"]) for row in token_group])) if token_group else None,
+                "token_spread_mean": float(np.mean([float(row["token_spread"]) for row in step_group])) if step_group else None,
+                "student_ctx_spread_mean": float(np.mean([float(row["student_ctx_spread"]) for row in step_group])) if step_group else None,
+            }
+        )
+    return summary_rows
 
 
 def load_best_policy(best_run: BestRun, *, task_id: str, seed: int):
@@ -444,6 +644,20 @@ def compare_selected_checkpoints(
         write_csv(resolved_output_dir / "dynamic_per_count_normalized_rewards.csv", normalized_rows)
         write_csv(resolved_output_dir / "dynamic_per_count_normalized_means.csv", per_count_means)
         write_csv(resolved_output_dir / "leaderboard.csv", leaderboard_rows)
+        trial_return_rows = _collect_dynamic_trial_return_rows(
+            suite_id=suite_id,
+            task_id=task_id,
+            task_config=task_config,
+            results_root=results_root,
+        )
+        if trial_return_rows:
+            write_csv(resolved_output_dir / "trial_return_by_count.csv", trial_return_rows)
+            plot_dynamic_trial_return_boxplots(
+                trial_return_rows,
+                output_path=resolved_output_dir / "trial_return_boxplots.png",
+                algorithms=[best_run.algorithm for best_run in best_runs],
+                task_title=task_id,
+            )
         write_json(
             resolved_output_dir / "comparison_summary.json",
             {
@@ -452,6 +666,7 @@ def compare_selected_checkpoints(
                 "comparison_type": "dynamic",
                 "rollouts_per_count": rollout_count,
                 "algorithms": [best_run.algorithm for best_run in best_runs],
+                "has_trial_distribution_plot": bool(trial_return_rows) if "trial_return_rows" in locals() else False,
             },
         )
     else:
@@ -548,8 +763,8 @@ def analyze_pimac_coordination(
     task_id: str,
     results_root: Path = OPTUNA_RESULTS_ROOT,
     seed: int = 42,
-    top_k: int = 1,
-    rollouts_per_count: int = 5,
+    top_k: int = 2,
+    rollouts_per_count: int = 8,
     counts: Sequence[int] | None = None,
     output_dir: str | None = None,
     overwrite: bool = False,
@@ -559,7 +774,7 @@ def analyze_pimac_coordination(
     task_spec = get_task_spec(task_id)
     task_config = load_json(task_spec.task_config)
     task_script = _task_script_module(task_id)
-    best_runs_all = discover_best_runs(suite_id=suite_id, task_id=task_id, results_root=results_root)
+    best_runs_all = discover_ranked_runs(suite_id=suite_id, task_id=task_id, results_root=results_root, top_k=top_k)
     target_runs = _select_trace_runs(best_runs_all, top_k=top_k)
     if not target_runs:
         raise RuntimeError(f"No traceable PIMAC runs found for {suite_id}/{task_id}.")
@@ -571,7 +786,7 @@ def analyze_pimac_coordination(
 
     dynamic_task = _task_is_dynamic(task_config)
     analysis_counts = list(counts) if counts is not None else (
-        [value for value in task_config["eval_counts"] if int(value) > 1] if dynamic_task else [int(task_config["n_agents"])]
+        [int(value) for value in task_config["eval_counts"]] if dynamic_task else [int(task_config["n_agents"])]
     )
 
     token_rows: list[dict[str, Any]] = []
@@ -579,6 +794,7 @@ def analyze_pimac_coordination(
     step_rows: list[dict[str, Any]] = []
 
     for best_run in target_runs:
+        run_label = _run_label(best_run)
         learner, _, _, env_spec = load_best_policy(best_run, task_id=task_id, seed=seed)
         learner.set_eval_mode()
         for n_agents in analysis_counts:
@@ -597,6 +813,7 @@ def analyze_pimac_coordination(
                         if not agent_ids:
                             break
                         student_contexts: list[np.ndarray] = []
+                        step_student_rows: list[dict[str, Any]] = []
                         token_vectors: np.ndarray | None = None
                         teacher_context_matrix: np.ndarray | None = None
                         actions: dict[str, int] = {}
@@ -626,6 +843,7 @@ def analyze_pimac_coordination(
                                     "algorithm": best_run.algorithm,
                                     "rank": best_run.rank,
                                     "trial_number": best_run.trial_number,
+                                    "run_label": run_label,
                                     "episode_index": episode_index,
                                     "step_index": step_index,
                                     "seed": rollout_seed,
@@ -650,7 +868,7 @@ def analyze_pimac_coordination(
                                     student_row["delta_b_norm"] = float(aux["delta_b_norm"].squeeze(0).squeeze(0).detach().cpu().item())
                                 for dim_index, value in enumerate(np.asarray(student_ctx, dtype=np.float32).reshape(-1)):
                                     student_row[f"dim_{dim_index:03d}"] = float(value)
-                                student_rows.append(student_row)
+                                step_student_rows.append(student_row)
 
                             stacked_obs = np.stack(
                                 [_transform_obs(task_script, env_spec, obs[agent_id]) for agent_id in agent_ids],
@@ -671,6 +889,7 @@ def analyze_pimac_coordination(
                                         "algorithm": best_run.algorithm,
                                         "rank": best_run.rank,
                                         "trial_number": best_run.trial_number,
+                                        "run_label": run_label,
                                         "episode_index": episode_index,
                                         "step_index": step_index,
                                         "seed": rollout_seed,
@@ -679,19 +898,22 @@ def analyze_pimac_coordination(
                                         "token_norm": float(np.linalg.norm(token_vector)),
                                     }
                                 )
+                                for dim_index, value in enumerate(np.asarray(token_vector, dtype=np.float32).reshape(-1)):
+                                    token_rows[-1][f"dim_{dim_index:03d}"] = float(value)
 
-                        step_student_rows = [row for row in student_rows if row["algorithm"] == best_run.algorithm and row["seed"] == rollout_seed and row["episode_index"] == episode_index and row["step_index"] == step_index]
                         for row, teacher_ctx in zip(step_student_rows, teacher_context_matrix):
                             student_ctx = np.asarray([float(row[key]) for key in sorted(k for k in row if k.startswith("dim_"))], dtype=np.float32)
                             row["teacher_alignment_cosine"] = _cosine_similarity(student_ctx, teacher_ctx)
                             row["teacher_alignment_mse"] = float(np.mean((student_ctx - teacher_ctx.reshape(-1)) ** 2))
                             row["teacher_ctx_norm"] = float(np.linalg.norm(teacher_ctx))
+                        student_rows.extend(step_student_rows)
 
                         step_rows.append(
                             {
                                 "algorithm": best_run.algorithm,
                                 "rank": best_run.rank,
                                 "trial_number": best_run.trial_number,
+                                "run_label": run_label,
                                 "episode_index": episode_index,
                                 "step_index": step_index,
                                 "seed": rollout_seed,
@@ -715,50 +937,54 @@ def analyze_pimac_coordination(
                 finally:
                     env.close()
 
-    summary_rows: list[dict[str, Any]] = []
-    for algorithm in sorted({row["algorithm"] for row in student_rows}):
-        for n_agents in sorted({int(row["n_agents"]) for row in student_rows if row["algorithm"] == algorithm}):
-            student_group = [row for row in student_rows if row["algorithm"] == algorithm and int(row["n_agents"]) == n_agents]
-            step_group = [row for row in step_rows if row["algorithm"] == algorithm and int(row["n_agents"]) == n_agents]
-            token_group = [row for row in token_rows if row["algorithm"] == algorithm and int(row["n_agents"]) == n_agents]
-            if not student_group:
-                continue
-            uncertainty_values = [
-                float(
-                    row.get(
-                        "ctx_signal_mean",
-                        row.get("ctx_reliance_mean", row.get("ctx_log_uncertainty_mean", row.get("ctx_logvar_mean"))),
-                    )
-                )
-                for row in student_group
-                if row.get(
-                    "ctx_signal_mean",
-                    row.get("ctx_reliance_mean", row.get("ctx_log_uncertainty_mean", row.get("ctx_logvar_mean"))),
-                ) is not None
-            ]
-            summary_rows.append(
-                {
-                    "algorithm": algorithm,
-                    "n_agents": int(n_agents),
-                    "samples": int(len(student_group)),
-                    "teacher_alignment_cosine_mean": float(np.mean([float(row["teacher_alignment_cosine"]) for row in student_group])),
-                    "teacher_alignment_mse_mean": float(np.mean([float(row["teacher_alignment_mse"]) for row in student_group])),
-                    "ctx_signal_mean": float(np.mean(uncertainty_values)) if uncertainty_values else None,
-                    "gate_mean": float(np.mean([float(row["gate"]) for row in student_group if row.get("gate") is not None])) if any(row.get("gate") is not None for row in student_group) else None,
-                    "delta_w_norm_mean": float(np.mean([float(row["delta_w_norm"]) for row in student_group if row.get("delta_w_norm") is not None])) if any(row.get("delta_w_norm") is not None for row in student_group) else None,
-                    "delta_b_norm_mean": float(np.mean([float(row["delta_b_norm"]) for row in student_group if row.get("delta_b_norm") is not None])) if any(row.get("delta_b_norm") is not None for row in student_group) else None,
-                    "teacher_ctx_norm_mean": float(np.mean([float(row["teacher_ctx_norm"]) for row in student_group])),
-                    "student_ctx_norm_mean": float(np.mean([float(row["student_ctx_norm"]) for row in student_group])),
-                    "token_norm_mean": float(np.mean([float(row["token_norm"]) for row in token_group])) if token_group else None,
-                    "token_spread_mean": float(np.mean([float(row["token_spread"]) for row in step_group])) if step_group else None,
-                    "student_ctx_spread_mean": float(np.mean([float(row["student_ctx_spread"]) for row in step_group])) if step_group else None,
-                }
-            )
+    trial_count_rows = _build_trial_count_summary_rows(student_rows)
+    summary_rows = _build_count_summary_rows(trial_count_rows, step_rows=step_rows, token_rows=token_rows)
+
+    token_pca_rows = build_grouped_pca_rows(token_rows, group_key="run_label", dim_prefix="dim_")
+    student_pca_rows = build_grouped_pca_rows(student_rows, group_key="run_label", dim_prefix="dim_")
+    gate_summary_rows = [
+        row
+        for row in trial_count_rows
+        if row.get("gate_mean") is not None and row.get("gate_std") is not None and row.get("teacher_alignment_cosine_mean") is not None
+    ]
 
     write_csv(resolved_output_dir / "student_rows.csv", student_rows)
     write_csv(resolved_output_dir / "token_rows.csv", token_rows)
     write_csv(resolved_output_dir / "step_metrics.csv", step_rows)
+    write_csv(resolved_output_dir / "summary_by_trial_count.csv", trial_count_rows)
     write_csv(resolved_output_dir / "summary_by_count.csv", summary_rows)
+    write_csv(resolved_output_dir / "token_pca_rows.csv", token_pca_rows)
+    write_csv(resolved_output_dir / "student_ctx_pca_rows.csv", student_pca_rows)
+
+    if token_pca_rows:
+        plot_pca_projection_grid(
+            token_pca_rows,
+            output_path=resolved_output_dir / "token_pca.png",
+            title=f"{task_id}: coordination-token PCA by run",
+        )
+    if student_pca_rows:
+        plot_pca_projection_grid(
+            student_pca_rows,
+            output_path=resolved_output_dir / "student_ctx_pca.png",
+            title=f"{task_id}: student-context PCA by run",
+        )
+    if trial_count_rows:
+        plot_alignment_heatmap(
+            trial_count_rows,
+            output_path=resolved_output_dir / "alignment_heatmap.png",
+            title=f"{task_id}: teacher-student alignment by run and roster size",
+        )
+    if gate_summary_rows:
+        plot_gate_alignment_3d(
+            gate_summary_rows,
+            output_path=resolved_output_dir / "gate_alignment_3d.png",
+            title=f"{task_id}: gate usage vs teacher alignment",
+        )
+        plot_gate_agent_heatmap(
+            gate_summary_rows,
+            output_path=resolved_output_dir / "gate_agentcount_heatmap.png",
+            title=f"{task_id}: gate regime occupancy by roster size",
+        )
     write_json(
         resolved_output_dir / "analysis_manifest.json",
         {
@@ -766,7 +992,15 @@ def analyze_pimac_coordination(
             "task": task_id,
             "rollouts_per_count": int(rollouts_per_count),
             "counts": [int(value) for value in analysis_counts],
+            "top_k": int(top_k),
             "algorithms": sorted({row["algorithm"] for row in student_rows}),
+            "plots": {
+                "token_pca": bool(token_pca_rows),
+                "student_ctx_pca": bool(student_pca_rows),
+                "alignment_heatmap": bool(trial_count_rows),
+                "gate_alignment_3d": bool(gate_summary_rows),
+                "gate_agentcount_heatmap": bool(gate_summary_rows),
+            },
         },
     )
     return resolved_output_dir
@@ -996,8 +1230,8 @@ def _parser() -> argparse.ArgumentParser:
     coordination_parser.add_argument("--suite-id", required=True)
     coordination_parser.add_argument("--task", required=True, choices=tuple(TASK_SPECS.keys()))
     coordination_parser.add_argument("--seed", type=int, default=42)
-    coordination_parser.add_argument("--top-k", type=int, default=1)
-    coordination_parser.add_argument("--rollouts-per-count", type=int, default=5)
+    coordination_parser.add_argument("--top-k", type=int, default=2)
+    coordination_parser.add_argument("--rollouts-per-count", type=int, default=8)
     coordination_parser.add_argument("--counts", type=int, nargs="*", default=None)
     coordination_parser.add_argument("--output-dir", type=str, default=None)
     coordination_parser.add_argument("--overwrite", action="store_true")

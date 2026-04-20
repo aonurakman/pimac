@@ -127,7 +127,45 @@ venv/bin/python optuna/analyze.py compare \
   --task simple_spread_dynamic_hard
 ```
 
-6. Export the best configs from a finished suite back into the task config folders:
+For dynamic-team tasks this now also writes:
+- `trial_return_by_count.csv`
+- `trial_return_boxplots.png`
+
+The boxplot figure uses completed sweep trials, one subplot per roster size, one box per algorithm, and split-aware panel backgrounds (`train` / `validation` / `test`).
+
+6. Trace PIMAC coordination signals for the top ranked runs:
+
+```bash
+venv/bin/python optuna/analyze.py coordination \
+  --suite-id study_01 \
+  --task simple_spread_dynamic_hard
+```
+
+Current defaults are intentionally richer than the original smoke settings:
+- `--top-k 2`
+- `--rollouts-per-count 8`
+
+The coordination analysis now writes:
+- raw rows:
+  - `student_rows.csv`
+  - `token_rows.csv`
+  - `step_metrics.csv`
+- summaries:
+  - `summary_by_trial_count.csv`
+  - `summary_by_count.csv`
+- PCA exports:
+  - `token_pca_rows.csv`
+  - `student_ctx_pca_rows.csv`
+- plots:
+  - `token_pca.png`
+  - `student_ctx_pca.png`
+  - `alignment_heatmap.png`
+  - `gate_alignment_3d.png`
+  - `gate_agentcount_heatmap.png`
+
+`summary_by_count.csv` is built by first summarizing each run at each roster size, then averaging those per-run summaries. That avoids overweighting longer or denser traces.
+
+7. Export the best configs from a finished suite back into the task config folders:
 
 ```bash
 venv/bin/python optuna/analyze.py export-best \
@@ -135,7 +173,7 @@ venv/bin/python optuna/analyze.py export-best \
   --task simple_spread_dynamic_hard
 ```
 
-7. If you want a combined leaderboard from two suites:
+8. If you want a combined leaderboard from two suites:
 
 ```bash
 venv/bin/python optuna/analyze.py merge \

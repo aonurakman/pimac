@@ -28,6 +28,7 @@ htmlcov/
 results/*
 !results/.gitkeep
 optuna/results/*
+optuna/archive/*
 !optuna/results/.gitkeep
 
 # Optuna database files
