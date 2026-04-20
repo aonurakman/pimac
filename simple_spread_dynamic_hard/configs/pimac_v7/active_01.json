@@ -1,0 +1,43 @@
+{
+  "batch_size": 128,
+  "buffer_size": 200000,
+  "clip_eps": 0.15,
+  "critic_hidden_sizes": [
+    128,
+    128
+  ],
+  "ctx_reliance_max": 1.5,
+  "ctx_reliance_min": -2.0,
+  "distill_weight": 0.02538568720533523,
+  "entropy_coef": 0.001276419811557098,
+  "gae_lambda": 0.99,
+  "gamma": 0.985,
+  "hypernet_delta_init_scale": 0.1,
+  "hypernet_hidden_sizes": [
+    96,
+    64
+  ],
+  "hypernet_l2_coef": 1.7029988640791463e-06,
+  "hypernet_rank": 4,
+  "include_team_size_feature": true,
+  "lr": 0.0018357465138238893,
+  "max_grad_norm": 2.0,
+  "normalize_advantage": true,
+  "num_epochs": 8,
+  "num_hidden": 2,
+  "num_tokens": 4,
+  "rnn_hidden_dim": 128,
+  "set_embed_dim": 128,
+  "set_encoder_hidden_sizes": [
+    96,
+    96
+  ],
+  "teacher_ema_tau": 0.001,
+  "update_every_episodes": 8,
+  "value_coef": 0.25,
+  "widths": [
+    128,
+    256,
+    128
+  ]
+}

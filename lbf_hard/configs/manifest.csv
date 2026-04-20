@@ -1,2 +1,14 @@
 algorithm,config_file,source_suite,source_rank,objective_score,note
 random,random/best_01.json,manual,1,,Uniform random policy baseline with one minimal config.
+mappo,mappo/best_01.json,v67_cal_01_lbf_hard,1,0.015555556863546371,Top-1 MAPPO config from the regular LBF hard v67 sweep.
+pimac_v0,pimac_v0/best_01.json,v67_cal_01_lbf_hard,1,0.02611111500300467,Top-1 PIMAC v0 config from the regular LBF hard v67 sweep.
+pimac_v6,pimac_v6/free_01.json,v67_cal_01_lbf_hard,1,0.03666667127981782,Top-1 unconstrained PIMAC v6 config from the regular LBF hard v67 sweep.
+pimac_v6,pimac_v6/free_02.json,v67_cal_01_lbf_hard,2,0.0361111166421324,Top-2 unconstrained PIMAC v6 config from the regular LBF hard v67 sweep.
+pimac_v6,pimac_v6/active_01.json,v67_active_cal_01_lbf_hard,1,0.03666666988283396,Top-1 active-zone PIMAC v6 config from the active LBF hard v67 sweep.
+pimac_v6,pimac_v6/active_02.json,v67_active_cal_01_lbf_hard,2,0.033888895297423005,Top-2 active-zone PIMAC v6 config from the active LBF hard v67 sweep.
+pimac_v6,pimac_v6/active_03.json,v67_active_cal_01_lbf_hard,3,0.03166667092591524,Top-3 active-zone PIMAC v6 config from the active LBF hard v67 sweep.
+pimac_v7,pimac_v7/free_01.json,v67_cal_01_lbf_hard,1,0.028333334485068917,Top-1 unconstrained PIMAC v7 config from the regular LBF hard v67 sweep.
+pimac_v7,pimac_v7/free_02.json,v67_cal_01_lbf_hard,2,0.02666666964069009,Top-2 unconstrained PIMAC v7 config from the regular LBF hard v67 sweep.
+pimac_v7,pimac_v7/active_01.json,v67_active_cal_01_lbf_hard,1,0.027222227538004518,Top-1 active-zone PIMAC v7 config from the active LBF hard v67 sweep.
+pimac_v7,pimac_v7/active_02.json,v67_active_cal_01_lbf_hard,2,0.02611111500300467,Top-2 active-zone PIMAC v7 config from the active LBF hard v67 sweep.
+pimac_v7,pimac_v7/active_03.json,v67_active_cal_01_lbf_hard,3,0.02611111500300467,Top-3 active-zone PIMAC v7 config from the active LBF hard v67 sweep.

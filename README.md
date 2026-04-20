@@ -82,9 +82,10 @@ Each task directory keeps:
 - `configs/<algorithm>/default.json`: the plain default starting point for studies
 - `findings.md`: the current interpretation note for that task
 
-Right now this repo has been reset to a fresh sweep state, so the tasks only keep `default.json` files
-plus a minimal random baseline in `manifest.csv`. Add `best_*.json` files back only after fresh sweeps
-are actually run and exported. The manifest should stay honest about what is actually ranked.
+Most tasks in this repo stay in a fresh-sweep state and only keep `default.json` files
+plus a minimal random baseline in `manifest.csv`. When fresh sweeps are actually run and exported back,
+the manifest should list the retained ranked configs explicitly. At the moment, `lbf_hard` and
+`simple_spread_dynamic_hard` already include exported ranked configs for the currently selected algorithms.
 
 This repo keeps only the reusable configs and written findings, not the full bulk of sweep outputs.
 

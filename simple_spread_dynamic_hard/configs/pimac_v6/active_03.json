@@ -1,0 +1,36 @@
+{
+  "batch_size": 128,
+  "buffer_size": 200000,
+  "clip_eps": 0.15,
+  "critic_hidden_sizes": [
+    192,
+    160
+  ],
+  "ctx_reliance_max": 2.0,
+  "ctx_reliance_min": -3.0,
+  "distill_weight": 0.25696394665005273,
+  "entropy_coef": 0.001276419811557098,
+  "gae_lambda": 0.99,
+  "gamma": 0.985,
+  "include_team_size_feature": true,
+  "lr": 0.0018357465138238893,
+  "max_grad_norm": 2.0,
+  "normalize_advantage": true,
+  "num_epochs": 8,
+  "num_hidden": 2,
+  "num_tokens": 4,
+  "rnn_hidden_dim": 128,
+  "set_embed_dim": 48,
+  "set_encoder_hidden_sizes": [
+    96,
+    96
+  ],
+  "teacher_ema_tau": 0.02,
+  "update_every_episodes": 8,
+  "value_coef": 0.25,
+  "widths": [
+    128,
+    256,
+    128
+  ]
+}
