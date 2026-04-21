@@ -156,6 +156,31 @@ def make_run_dir(task_name: str, algorithm: str, *, results_root: str | Path | N
     return str(out_dir)
 
 
+def configured_checkpoint_episodes(task_config: dict) -> tuple[int, ...]:
+    """Return extra training checkpoint episodes, excluding the final checkpoint.
+
+    Task runners already save `final_checkpoint.pt` at the end of training. This helper computes
+    additional trajectory snapshots requested through the task config so those can be written
+    without changing evaluation semantics.
+    """
+
+    total_episodes = int(task_config["episodes"])
+    checkpoints: set[int] = set()
+
+    raw_explicit = task_config.get("save_checkpoint_episodes", [])
+    if raw_explicit:
+        for value in raw_explicit:
+            episode = int(value)
+            if 0 < episode < total_episodes:
+                checkpoints.add(episode)
+
+    every = int(task_config.get("save_checkpoint_every_episodes", 0) or 0)
+    if every > 0:
+        checkpoints.update(range(every, total_episodes, every))
+
+    return tuple(sorted(checkpoints))
+
+
 def moving_average(values: np.ndarray, window: int) -> np.ndarray:
     if values.size < window:
         return values

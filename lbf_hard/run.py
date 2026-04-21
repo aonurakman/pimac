@@ -39,6 +39,7 @@ from lbf_hard.utils import (
 )
 from utils import (
     active_agent_mask,
+    configured_checkpoint_episodes,
     flatten_update_history,
     learner_temperature,
     load_json,
@@ -304,8 +305,12 @@ def run_task(
     out_dir = Path(make_run_dir(str(task_config["task_name"]), algorithm, results_root=results_root, run_id=run_id))
     best_ckpt_path = out_dir / "best_checkpoint.pt"
     final_ckpt_path = out_dir / "final_checkpoint.pt"
+    trajectory_ckpt_dir = out_dir / "checkpoints"
     curriculum_windows: list[StageWindow] = build_curriculum_windows(task_config)
     periodic_eval_counts = _configured_periodic_eval_counts(task_config)
+    extra_checkpoint_episodes = set(configured_checkpoint_episodes(task_config))
+    if extra_checkpoint_episodes:
+        trajectory_ckpt_dir.mkdir(parents=True, exist_ok=True)
     curriculum_rng = np.random.default_rng(seed)
     env_cache: dict = {}
 
@@ -399,6 +404,9 @@ def run_task(
                     "weights": "|".join(f"{value:.2f}" for value in stage.weights),
                 }
             )
+
+            if (episode_index + 1) in extra_checkpoint_episodes:
+                learner.save_checkpoint(trajectory_ckpt_dir / f"episode_{episode_index + 1:06d}.pt")
 
             eval_every = int(task_config["eval_every_episodes"])
             if eval_every and ((episode_index + 1) % eval_every == 0):
