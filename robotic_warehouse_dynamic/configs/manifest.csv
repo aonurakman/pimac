@@ -1,2 +1,11 @@
 algorithm,config_file,source_suite,source_rank,objective_score,note
 random,random/best_01.json,manual,1,,Uniform random policy baseline with one minimal config.
+mappo,mappo/best_01.json,v67_cal_01_rware,1,0.15000000596046448,Top-1 MAPPO config from the regular RWARE v67 sweep.
+pimac_v0,pimac_v0/best_01.json,v67_cal_01_rware,1,0.11666667088866234,Top-1 PIMAC v0 config from the regular RWARE v67 sweep.
+pimac_v6,pimac_v6/free_01.json,v67_cal_01_rware,1,0.1416666740551591,Top-1 unconstrained PIMAC v6 config from the regular RWARE v67 sweep.
+pimac_v6,pimac_v6/free_02.json,v67_cal_01_rware,2,0.13333333749324083,Top-2 unconstrained PIMAC v6 config from the regular RWARE v67 sweep.
+pimac_v6,pimac_v6/active_01.json,v67_active_cal_01_rware,1,0.18333334103226662,Top-1 active-zone PIMAC v6 config from the active RWARE v67 sweep.
+pimac_v6,pimac_v6/active_02.json,v67_active_cal_01_rware,2,0.15000000596046448,Top-2 active-zone PIMAC v6 config from the active RWARE v67 sweep.
+pimac_v6,pimac_v6/active_03.json,v67_active_cal_01_rware,3,0.14166667219251394,Top-3 active-zone PIMAC v6 config from the active RWARE v67 sweep.
+pimac_v7,pimac_v7/active_01.json,v67_active_cal_01_rware,1,0.1666666679084301,Top-1 active-zone PIMAC v7 config from the active RWARE v67 sweep.
+pimac_v7,pimac_v7/active_02.json,v67_active_cal_01_rware,2,0.15000000596046448,Top-2 active-zone PIMAC v7 config from the active RWARE v67 sweep.

@@ -1,0 +1,31 @@
+{
+  "batch_size": 64,
+  "buffer_size": 200000,
+  "clip_eps": 0.25,
+  "critic_hidden_sizes": [
+    96,
+    96
+  ],
+  "entropy_coef": 0.00023353919825013002,
+  "gae_lambda": 0.97,
+  "gamma": 0.99,
+  "include_team_size_feature": true,
+  "lr": 0.00012361415331738757,
+  "max_grad_norm": 10.0,
+  "normalize_advantage": true,
+  "num_epochs": 6,
+  "num_hidden": 2,
+  "rnn_hidden_dim": 32,
+  "set_embed_dim": 160,
+  "set_encoder_hidden_sizes": [
+    48,
+    48
+  ],
+  "update_every_episodes": 1,
+  "value_coef": 0.5,
+  "widths": [
+    128,
+    256,
+    128
+  ]
+}

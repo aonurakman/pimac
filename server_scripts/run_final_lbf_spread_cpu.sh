@@ -10,7 +10,10 @@ RUN_NAME="$1"
 MAX_PARALLEL="${2:-16}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+REPO_ROOT="${SLURM_SUBMIT_DIR:-${PWD}}"
+if [ ! -f "${REPO_ROOT}/requirements.txt" ]; then
+    REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+fi
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 RESULTS_ROOT="${RESULTS_ROOT:-results/${RUN_NAME}}"
