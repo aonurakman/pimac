@@ -369,7 +369,7 @@ def run_task(
 def _parser() -> argparse.ArgumentParser:
     """Create the small CLI used by both direct runs and sweep tooling."""
     parser = argparse.ArgumentParser(description="Run one experiment on hard dynamic simple_spread_v3.")
-    parser.add_argument("--algorithm", choices=ALGORITHM_ORDER, required=True)
+    parser.add_argument("--algorithm", choices=TASK_ALGORITHM_ORDER, required=True)
     parser.add_argument("--alg-config", type=str, required=True, help="Path to the algorithm JSON config.")
     parser.add_argument("--task-config", type=str, default=None, help="Optional task JSON. Defaults to task.json in this folder.")
     parser.add_argument("--seed", type=int, default=42)
@@ -399,3 +399,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+TASK_ALGORITHM_ORDER = ALGORITHM_ORDER + ("pimac_v6_ablation",)

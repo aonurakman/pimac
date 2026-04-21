@@ -1,5 +1,6 @@
 algorithm,config_file,source_suite,source_rank,objective_score,note
 random,random/best_01.json,manual,1,,Uniform random policy baseline with one minimal config.
+ippo,ippo/best_01.json,hard_baseline_cal_01_spread_hard,1,-61.613457997639976,Top-1 IPPO config from the hard baseline Spread sweep.
 mappo,mappo/best_01.json,v67_cal_01_spread_hard,1,-51.052659352620445,Top-1 MAPPO config from the regular Spread hard v67 sweep.
 pimac_v0,pimac_v0/best_01.json,v67_cal_01_spread_hard,1,-49.45193862915039,Top-1 PIMAC v0 config from the regular Spread hard v67 sweep.
 pimac_v6,pimac_v6/free_01.json,v67_cal_01_spread_hard,1,-49.34175109863281,Top-1 unconstrained PIMAC v6 config from the regular Spread hard v67 sweep.
@@ -7,6 +8,9 @@ pimac_v6,pimac_v6/free_02.json,v67_cal_01_spread_hard,2,-49.72121810913086,Top-2
 pimac_v6,pimac_v6/active_01.json,v67_active_cal_01_spread_hard,1,-49.33560562133789,Top-1 active-zone PIMAC v6 config from the active Spread hard v67 sweep.
 pimac_v6,pimac_v6/active_02.json,v67_active_cal_01_spread_hard,2,-49.50954945882162,Top-2 active-zone PIMAC v6 config from the active Spread hard v67 sweep.
 pimac_v6,pimac_v6/active_03.json,v67_active_cal_01_spread_hard,3,-49.776503245035805,Top-3 active-zone PIMAC v6 config from the active Spread hard v67 sweep.
+pimac_v6_ablation,pimac_v6_ablation/active_03_always_on_gate.json,manual,1,,Spread hard ablation config derived from PIMAC v6 active_03 with gate forced to one.
+pimac_v6_ablation,pimac_v6_ablation/active_03_always_off_gate.json,manual,2,,Spread hard ablation config derived from PIMAC v6 active_03 with gate forced to zero.
+pimac_v6_ablation,pimac_v6_ablation/active_03_no_distill_weight.json,manual,3,,Spread hard ablation config derived from PIMAC v6 active_03 with effective distillation weight forced to zero.
 pimac_v7,pimac_v7/free_01.json,v67_cal_01_spread_hard,1,-48.78722127278646,Top-1 unconstrained PIMAC v7 config from the regular Spread hard v67 sweep.
 pimac_v7,pimac_v7/free_02.json,v67_cal_01_spread_hard,2,-48.79439926147461,Top-2 unconstrained PIMAC v7 config from the regular Spread hard v67 sweep.
 pimac_v7,pimac_v7/active_01.json,v67_active_cal_01_spread_hard,1,-48.485511779785156,Top-1 active-zone PIMAC v7 config from the active Spread hard v67 sweep.

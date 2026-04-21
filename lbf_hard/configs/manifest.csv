@@ -1,5 +1,6 @@
 algorithm,config_file,source_suite,source_rank,objective_score,note
 random,random/best_01.json,manual,1,,Uniform random policy baseline with one minimal config.
+ippo,ippo/best_01.json,hard_baseline_cal_01_lbf_hard,1,0.05055555794388056,Top-1 IPPO config from the hard baseline LBF sweep.
 mappo,mappo/best_01.json,v67_cal_01_lbf_hard,1,0.015555556863546371,Top-1 MAPPO config from the regular LBF hard v67 sweep.
 pimac_v0,pimac_v0/best_01.json,v67_cal_01_lbf_hard,1,0.02611111500300467,Top-1 PIMAC v0 config from the regular LBF hard v67 sweep.
 pimac_v6,pimac_v6/free_01.json,v67_cal_01_lbf_hard,1,0.03666667127981782,Top-1 unconstrained PIMAC v6 config from the regular LBF hard v67 sweep.
