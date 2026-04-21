@@ -28,13 +28,23 @@ export NUMEXPR_NUM_THREADS=1
 
 cd "${REPO_ROOT}"
 
-if [ "${DRY_RUN}" != "1" ]; then
+ensure_venv() {
     if [ ! -d "venv" ]; then
         "${PYTHON_BIN}" -m venv venv
+        return 0
     fi
 
+    if [ ! -x "venv/bin/python" ] || ! venv/bin/python -c 'import sys; print(sys.executable)' >/dev/null 2>&1; then
+        echo "Recreating incompatible repo-local venv under ${REPO_ROOT}/venv" >&2
+        rm -rf venv
+        "${PYTHON_BIN}" -m venv venv
+    fi
+}
+
+if [ "${DRY_RUN}" != "1" ]; then
+    ensure_venv
     venv/bin/python -m pip install --upgrade pip
-    venv/bin/pip install -r requirements.txt
+    venv/bin/python -m pip install -r requirements.txt
 fi
 
 mkdir -p "${RESULTS_ROOT}/logs" "${RESULTS_ROOT}/_task_configs"
