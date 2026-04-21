@@ -61,8 +61,10 @@ dst = results_root / "_task_configs" / "robotic_warehouse_dynamic_final.json"
 config = json.loads(src.read_text())
 config.update(
     {
-        "episodes": 3000,
-        "eval_every_episodes": 0,
+        "episodes": 20000,
+        "eval_every_episodes": 2000,
+        "checkpoint_selection_mode": "final",
+        "validation_rollouts": 10,
         "test_rollouts": 100,
     }
 )
@@ -72,7 +74,20 @@ PY
 
 discover_configs() {
     local algorithm="$1"
-    find "robotic_warehouse_dynamic/configs/${algorithm}" -maxdepth 1 -type f -name '*.json' | sort
+    case "${algorithm}" in
+        mappo)
+            find "robotic_warehouse_dynamic/configs/${algorithm}" -maxdepth 1 -type f -name 'best_01.json' | sort
+            ;;
+        pimac_v0)
+            find "robotic_warehouse_dynamic/configs/${algorithm}" -maxdepth 1 -type f -name 'best_01.json' | sort
+            ;;
+        pimac_v6)
+            find "robotic_warehouse_dynamic/configs/${algorithm}" -maxdepth 1 -type f -name 'active_*.json' | sort
+            ;;
+        *)
+            find "robotic_warehouse_dynamic/configs/${algorithm}" -maxdepth 1 -type f -name '*.json' | sort
+            ;;
+    esac
 }
 
 launch_job() {
@@ -114,7 +129,6 @@ ALGORITHMS=(
     "mappo"
     "pimac_v0"
     "pimac_v6"
-    "pimac_v7"
 )
 
 declare -a FAILED=()

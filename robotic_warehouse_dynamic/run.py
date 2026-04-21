@@ -20,6 +20,8 @@ from algorithms.registry import ALGORITHM_ORDER, get_algorithm_class
 from robotic_warehouse_dynamic.utils import (
     EvalResult,
     StageWindow,
+    _checkpoint_selection_mode,
+    _configured_periodic_eval_counts,
     build_curriculum_windows,
     build_summary,
     close_env_cache,
@@ -275,6 +277,8 @@ def run_task(
     best_ckpt_path = out_dir / "best_checkpoint.pt"
     final_ckpt_path = out_dir / "final_checkpoint.pt"
     curriculum_windows: list[StageWindow] = build_curriculum_windows(task_config)
+    periodic_eval_counts = _configured_periodic_eval_counts(task_config)
+    uses_validation_selection = _checkpoint_selection_mode(task_config) == "best_validation"
     curriculum_rng = np.random.default_rng(seed)
     env_cache: dict = {}
 
@@ -386,18 +390,19 @@ def run_task(
                         seed_offset=int(task_config["validation_seed_offset"]),
                         make_env_fn=make_env,
                     ),
+                    eval_counts=periodic_eval_counts,
                 )
                 validation_results.extend(eval_results)
 
                 eligible_results = eval_results if is_checkpoint_selection_eligible(task_config, episode_index + 1, curriculum_windows) else []
-                if eligible_results:
+                if uses_validation_selection and eligible_results:
                     score = float(grouped_eval_metrics(task_config, eligible_results)["selection_score"])
                     if score > (best_eval + float(task_config["min_improve"])):
                         learner.save_checkpoint(best_ckpt_path)
                         best_eval = score
 
         learner.save_checkpoint(final_ckpt_path)
-        if validation_results and not best_ckpt_path.is_file():
+        if uses_validation_selection and validation_results and not best_ckpt_path.is_file():
             learner.save_checkpoint(best_ckpt_path)
 
         best_checkpoint_test_results: list[EvalResult] = []
@@ -419,7 +424,7 @@ def run_task(
                 make_env_fn=make_env,
             ),
         )
-        if validation_results:
+        if uses_validation_selection and validation_results:
             best_learner = type(learner).load_checkpoint(
                 best_ckpt_path,
                 env_spec=learner.env_spec,
@@ -460,6 +465,7 @@ def run_task(
             validation_results=validation_results,
             best_checkpoint_test_results=best_checkpoint_test_results,
             final_checkpoint_test_results=final_checkpoint_test_results,
+            uses_validation_selection=uses_validation_selection,
             extra_metrics=extra_metrics,
         )
 
@@ -480,11 +486,7 @@ def run_task(
             out_dir / "eval_by_count.csv",
             [
                 asdict(eval_result)
-                for eval_result in (
-                    [*validation_results, *best_checkpoint_test_results, *final_checkpoint_test_results]
-                    if best_checkpoint_test_results
-                    else [*final_checkpoint_test_results]
-                )
+                for eval_result in [*validation_results, *best_checkpoint_test_results, *final_checkpoint_test_results]
             ],
         )
         save_update_history_json(out_dir / "update_history.json", learner.get_update_history())

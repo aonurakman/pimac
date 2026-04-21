@@ -241,6 +241,32 @@ def _configured_test_counts(task_config: dict) -> tuple[int, ...]:
     return tuple()
 
 
+def _checkpoint_selection_mode(task_config: dict) -> str:
+    """Return how checkpoints should be selected when periodic evaluation is enabled."""
+    mode = str(task_config.get("checkpoint_selection_mode", "best_validation"))
+    if mode not in {"best_validation", "final"}:
+        raise ValueError(f"Unsupported checkpoint_selection_mode: {mode!r}")
+    return mode
+
+
+def _configured_periodic_eval_counts(task_config: dict) -> tuple[int, ...]:
+    """Return the counts allowed during periodic checkpoint evaluation."""
+    configured_train_counts = tuple(int(value) for value in _configured_train_counts(task_config))
+    configured_validation_counts = tuple(int(value) for value in _configured_validation_counts(task_config))
+    periodic_counts = configured_train_counts + tuple(
+        count for count in configured_validation_counts if count not in configured_train_counts
+    )
+    if periodic_counts:
+        return periodic_counts
+
+    configured_eval_counts = tuple(int(value) for value in task_config.get("eval_counts", []))
+    test_counts = set(_configured_test_counts(task_config))
+    if configured_eval_counts:
+        return tuple(count for count in configured_eval_counts if count not in test_counts)
+
+    return tuple()
+
+
 def _split_mean(count_to_mean: dict[int, float], counts: Sequence[int]) -> float:
     """Compute the mean return over one explicit count split."""
     values = np.asarray([count_to_mean[count] for count in counts if count in count_to_mean], dtype=np.float64)
@@ -279,10 +305,11 @@ def grouped_eval_metrics(task_config: dict, eval_results: Sequence[EvalResult]) 
 
     eval_counts = tuple(int(value) for value in task_config["eval_counts"])
     count_to_mean = {eval_result.n_agents: float(eval_result.return_mean) for eval_result in eval_results}
-    ordered_means = np.asarray([count_to_mean[count] for count in eval_counts], dtype=np.float64)
-    small = np.asarray([count_to_mean[count] for count in eval_counts if count <= 3], dtype=np.float64)
-    mid = np.asarray([count_to_mean[count] for count in eval_counts if 4 <= count <= 7], dtype=np.float64)
-    large = np.asarray([count_to_mean[count] for count in eval_counts if count >= 8], dtype=np.float64)
+    available_counts = tuple(count for count in eval_counts if count in count_to_mean)
+    ordered_means = np.asarray([count_to_mean[count] for count in available_counts], dtype=np.float64)
+    small = np.asarray([count_to_mean[count] for count in available_counts if count <= 3], dtype=np.float64)
+    mid = np.asarray([count_to_mean[count] for count in available_counts if 4 <= count <= 7], dtype=np.float64)
+    large = np.asarray([count_to_mean[count] for count in available_counts if count >= 8], dtype=np.float64)
     best = float(np.max(ordered_means))
     worst = float(np.min(ordered_means))
     overall_eval_mean = float(np.mean(ordered_means))
@@ -317,10 +344,16 @@ def run_policy_evaluation(
     phase: str,
     rollout_count: int,
     evaluate_one_count_fn: Callable[[int, int], Sequence[float]],
+    eval_counts: Optional[Sequence[int]] = None,
 ) -> list[EvalResult]:
     """Evaluate one checkpoint across all configured team sizes."""
     eval_results: list[EvalResult] = []
-    for n_agents in [int(value) for value in task_config["eval_counts"]]:
+    counts_to_evaluate = tuple(
+        dict.fromkeys(
+            int(value) for value in (task_config["eval_counts"] if eval_counts is None else eval_counts)
+        )
+    )
+    for n_agents in counts_to_evaluate:
         returns = np.asarray(evaluate_one_count_fn(n_agents, rollout_count), dtype=np.float32)
         eval_results.append(
             EvalResult(
@@ -388,6 +421,7 @@ def build_summary(
     validation_results: Sequence[EvalResult],
     best_checkpoint_test_results: Sequence[EvalResult],
     final_checkpoint_test_results: Sequence[EvalResult],
+    uses_validation_selection: bool,
     extra_metrics: Optional[dict[str, float]] = None,
 ) -> dict:
     """Build the summary JSON written at the end of one dynamic-task run."""
@@ -396,10 +430,13 @@ def build_summary(
     moving_avg = moving_average(train_rewards, moving_avg_window) if train_rewards.size else np.asarray([], dtype=np.float32)
 
     logged_validation_summary = _validation_summary(task_config, validation_results)
-    eligible_validation_results = filter_selection_eligible_results(task_config, validation_results, curriculum_windows)
+    eligible_validation_results = (
+        filter_selection_eligible_results(task_config, validation_results, curriculum_windows)
+        if uses_validation_selection
+        else list(validation_results)
+    )
     filtered_validation_summary = _validation_summary(task_config, eligible_validation_results)
     final_test_summary = grouped_eval_metrics(task_config, final_checkpoint_test_results)
-    uses_validation_selection = bool(validation_results)
     selected_checkpoint = "final_checkpoint"
     test_summary = {
         "final_checkpoint": final_test_summary,
@@ -411,7 +448,7 @@ def build_summary(
         "selection_checkpoint": selected_checkpoint,
         "best_vs_final_drop": 0.0,
     }
-    if uses_validation_selection:
+    if uses_validation_selection and best_checkpoint_test_results:
         best_test_summary = grouped_eval_metrics(task_config, best_checkpoint_test_results)
         selected_checkpoint = "best_checkpoint"
         test_summary = {
@@ -464,9 +501,14 @@ def build_summary(
         "validation": filtered_validation_summary,
         "test": test_summary,
         "checkpoint_selection": {
-            "selection_stage_index": int(task_config["checkpoint_selection_stage_index"]),
-            "selection_start_episode": validation_selection_start_episode(task_config, curriculum_windows),
-            "selection_eligible_checkpoint_count": int(len({eval_result.checkpoint_episode for eval_result in eligible_validation_results})),
+            "mode": _checkpoint_selection_mode(task_config),
+            "selection_stage_index": int(task_config["checkpoint_selection_stage_index"]) if uses_validation_selection else -1,
+            "selection_start_episode": validation_selection_start_episode(task_config, curriculum_windows)
+            if uses_validation_selection
+            else -1,
+            "selection_eligible_checkpoint_count": int(len({eval_result.checkpoint_episode for eval_result in eligible_validation_results}))
+            if uses_validation_selection
+            else 0,
             "logged_checkpoint_count": int(len({eval_result.checkpoint_episode for eval_result in validation_results})),
             "logged_best_validation_mean": float(logged_validation_summary["best_validation_mean"]),
             "logged_best_validation_selection_score": float(logged_validation_summary["best_validation_selection_score"]),

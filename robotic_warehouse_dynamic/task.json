@@ -70,6 +70,7 @@
     5,
     6,
     8,
+    9,
     10
   ],
   "eval_every_episodes": 200,
@@ -98,6 +99,7 @@
   "validation_rollouts": 3,
   "validation_seed_offset": 10000,
   "test_counts": [
+    9,
     10
   ],
   "video_counts": [

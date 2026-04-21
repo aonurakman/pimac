@@ -17,7 +17,7 @@ PARTITION="${PARTITION:-rknodes}"
 QOS="${QOS:-big_bonk}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-32}"
 MEM="${MEM:-120G}"
-JOB_NAME="${JOB_NAME:-final_rware_cpu}"
+JOB_NAME="${JOB_NAME:-final_rware_long_cpu}"
 
 mkdir -p "${LOG_DIR}"
 
