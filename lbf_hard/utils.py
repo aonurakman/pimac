@@ -210,6 +210,17 @@ class EvalResult:
     return_max: float
 
 
+@dataclass(frozen=True)
+class EvalRolloutResult:
+    """One raw evaluation rollout return for one checkpoint and one team size."""
+
+    phase: str
+    checkpoint_episode: int
+    n_agents: int
+    rollout_index: int
+    episode_return: float
+
+
 def _configured_agent_counts(task_config: dict) -> list[int]:
     """Collect all team sizes that this task configuration expects to support."""
     counts = {
@@ -376,6 +387,20 @@ def _configured_test_counts(task_config: dict) -> tuple[int, ...]:
     return tuple()
 
 
+def _configured_periodic_eval_counts(task_config: dict) -> tuple[int, ...]:
+    """Return the counts allowed during periodic checkpoint evaluation."""
+    configured_eval_counts = tuple(int(value) for value in task_config.get("eval_counts", []))
+    test_counts = set(_configured_test_counts(task_config))
+    if configured_eval_counts:
+        return tuple(count for count in configured_eval_counts if count not in test_counts)
+
+    allowed_counts = (
+        *tuple(int(value) for value in _configured_train_counts(task_config)),
+        *tuple(int(value) for value in _configured_validation_counts(task_config)),
+    )
+    return tuple(dict.fromkeys(count for count in allowed_counts if count not in test_counts))
+
+
 def _split_mean(count_to_mean: dict[int, float], counts: Sequence[int]) -> float:
     """Compute the mean return over one explicit count split."""
     values = np.asarray([count_to_mean[count] for count in counts if count in count_to_mean], dtype=np.float64)
@@ -414,10 +439,11 @@ def grouped_eval_metrics(task_config: dict, eval_results: Sequence[EvalResult]) 
 
     eval_counts = tuple(int(value) for value in task_config["eval_counts"])
     count_to_mean = {eval_result.n_agents: float(eval_result.return_mean) for eval_result in eval_results}
-    ordered_means = np.asarray([count_to_mean[count] for count in eval_counts], dtype=np.float64)
-    small = np.asarray([count_to_mean[count] for count in eval_counts if count <= 3], dtype=np.float64)
-    mid = np.asarray([count_to_mean[count] for count in eval_counts if 4 <= count <= 7], dtype=np.float64)
-    large = np.asarray([count_to_mean[count] for count in eval_counts if count >= 8], dtype=np.float64)
+    available_counts = tuple(count for count in eval_counts if count in count_to_mean)
+    ordered_means = np.asarray([count_to_mean[count] for count in available_counts], dtype=np.float64)
+    small = np.asarray([count_to_mean[count] for count in available_counts if count <= 3], dtype=np.float64)
+    mid = np.asarray([count_to_mean[count] for count in available_counts if 4 <= count <= 7], dtype=np.float64)
+    large = np.asarray([count_to_mean[count] for count in available_counts if count >= 8], dtype=np.float64)
     best = float(np.max(ordered_means))
     worst = float(np.min(ordered_means))
     overall_eval_mean = float(np.mean(ordered_means))
@@ -452,10 +478,38 @@ def run_policy_evaluation(
     phase: str,
     rollout_count: int,
     evaluate_one_count_fn: Callable[[int, int], Sequence[float]],
+    eval_counts: Optional[Sequence[int]] = None,
 ) -> list[EvalResult]:
     """Evaluate one checkpoint across all configured team sizes."""
+    eval_results, _ = run_policy_evaluation_with_rollouts(
+        task_config,
+        checkpoint_episode=checkpoint_episode,
+        phase=phase,
+        rollout_count=rollout_count,
+        evaluate_one_count_fn=evaluate_one_count_fn,
+        eval_counts=eval_counts,
+    )
+    return eval_results
+
+
+def run_policy_evaluation_with_rollouts(
+    task_config: dict,
+    *,
+    checkpoint_episode: int,
+    phase: str,
+    rollout_count: int,
+    evaluate_one_count_fn: Callable[[int, int], Sequence[float]],
+    eval_counts: Optional[Sequence[int]] = None,
+) -> tuple[list[EvalResult], list[EvalRolloutResult]]:
+    """Evaluate one checkpoint and keep both aggregate and rollout-level returns."""
     eval_results: list[EvalResult] = []
-    for n_agents in [int(value) for value in task_config["eval_counts"]]:
+    rollout_results: list[EvalRolloutResult] = []
+    counts_to_evaluate = tuple(
+        dict.fromkeys(
+            int(value) for value in (task_config["eval_counts"] if eval_counts is None else eval_counts)
+        )
+    )
+    for n_agents in counts_to_evaluate:
         returns = np.asarray(evaluate_one_count_fn(n_agents, rollout_count), dtype=np.float32)
         eval_results.append(
             EvalResult(
@@ -469,7 +523,17 @@ def run_policy_evaluation(
                 return_max=float(np.max(returns)),
             )
         )
-    return eval_results
+        rollout_results.extend(
+            EvalRolloutResult(
+                phase=str(phase),
+                checkpoint_episode=int(checkpoint_episode),
+                n_agents=int(n_agents),
+                rollout_index=int(rollout_index),
+                episode_return=float(episode_return),
+            )
+            for rollout_index, episode_return in enumerate(returns.tolist())
+        )
+    return eval_results, rollout_results
 
 
 def _validation_summary(task_config: dict, eval_results: Sequence[EvalResult]) -> dict[str, float]:

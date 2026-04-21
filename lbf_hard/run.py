@@ -21,6 +21,7 @@ from lbf_hard.utils import (
     EvalResult,
     FixedEntityObservationWrapper,
     StageWindow,
+    _configured_periodic_eval_counts,
     build_curriculum_windows,
     build_summary,
     close_env_cache,
@@ -31,6 +32,7 @@ from lbf_hard.utils import (
     pad_vector,
     plot_training_dashboard,
     run_policy_evaluation,
+    run_policy_evaluation_with_rollouts,
     sample_curriculum_count,
     save_rollout_gif,
     validate_agent_count_support,
@@ -303,6 +305,7 @@ def run_task(
     best_ckpt_path = out_dir / "best_checkpoint.pt"
     final_ckpt_path = out_dir / "final_checkpoint.pt"
     curriculum_windows: list[StageWindow] = build_curriculum_windows(task_config)
+    periodic_eval_counts = _configured_periodic_eval_counts(task_config)
     curriculum_rng = np.random.default_rng(seed)
     env_cache: dict = {}
 
@@ -416,6 +419,7 @@ def run_task(
                         make_env_fn=make_env,
                         summarize_episode_return_fn=summarize_episode_return,
                     ),
+                    eval_counts=periodic_eval_counts,
                 )
                 validation_results.extend(eval_results)
 
@@ -431,8 +435,9 @@ def run_task(
             learner.save_checkpoint(best_ckpt_path)
 
         best_checkpoint_test_results: list[EvalResult] = []
+        best_checkpoint_rollout_results: list[dict] = []
         best_learner = learner
-        final_checkpoint_test_results = run_policy_evaluation(
+        final_checkpoint_test_results, final_checkpoint_rollout_results = run_policy_evaluation_with_rollouts(
             task_config,
             checkpoint_episode=int(task_config["episodes"]),
             phase="final_checkpoint_test",
@@ -457,7 +462,7 @@ def run_task(
                 config=learner.config,
                 device=str(learner.device),
             )
-            best_checkpoint_test_results = run_policy_evaluation(
+            best_checkpoint_test_results, best_checkpoint_rollout_results = run_policy_evaluation_with_rollouts(
                 task_config,
                 checkpoint_episode=int(task_config["episodes"]),
                 phase="best_checkpoint_test",
@@ -516,6 +521,17 @@ def run_task(
                     [*validation_results, *best_checkpoint_test_results, *final_checkpoint_test_results]
                     if best_checkpoint_test_results
                     else [*final_checkpoint_test_results]
+                )
+            ],
+        )
+        write_csv(
+            out_dir / "eval_rollout_returns.csv",
+            [
+                asdict(eval_result)
+                for eval_result in (
+                    [*best_checkpoint_rollout_results, *final_checkpoint_rollout_results]
+                    if best_checkpoint_rollout_results
+                    else [*final_checkpoint_rollout_results]
                 )
             ],
         )

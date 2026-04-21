@@ -165,6 +165,60 @@ The coordination analysis now writes:
 
 `summary_by_count.csv` is built by first summarizing each run at each roster size, then averaging those per-run summaries. That avoids overweighting longer or denser traces.
 
+For final multi-seed benchmark runs under `results/`, there is also a small standalone plotting helper:
+
+```bash
+venv/bin/python optuna/plot_learning_curves.py \
+  --preset lbf_final_selected \
+  --preset rware_final_selected \
+  --preset spread_final_selected
+```
+
+It plots the maintained selected final curves with mean lines, CI bands, and optional curriculum-stage shading.
+By default it also writes a secondary `*_by_stage.png` figure with one subplot per curriculum stage
+and independent y-axes.
+By default it also writes a `*_final_eval_boxplots.png` figure that groups the final per-seed
+evaluation means by roster size and algorithm, using the persisted `eval_by_count.csv` files.
+Pass `--save-legend-separately` to omit legends from the plot figures and write one extra
+`*_legend.png` artifact per preset.
+By default, rolling smoothing spans the whole run; enable stage-local smoothing with
+`--reset-smoothing-at-stage-boundaries` if you want the rolling window to restart at each curriculum stage.
+By default, consecutive curriculum stages with the same roster-count set are merged in the stage
+visualization; disable that with `--no-merge-identical-adjacent-stages` if you want every stage shown separately.
+Use `--list-presets` to see the available presets, and tweak smoothing / CI / labels from the CLI.
+To switch which exported config is plotted for a preset, edit the `SELECTED_CONFIGS` block near the
+top of [optuna/plot_learning_curves.py](/Users/akman/pimac/optuna/plot_learning_curves.py); the
+script derives the full run globs from those compact selections.
+
+For coordination traces on one concrete final-results family (task + algorithm + config), use:
+
+```bash
+venv/bin/python optuna/plot_coordination_results.py \
+  --task-results-dir results/simple_spread_dynamic_hard \
+  --task simple_spread_dynamic_hard \
+  --algorithm pimac_v6 \
+  --config active_03
+```
+
+This reads all matching seeded runs under the requested task results directory and writes the same
+PCA/alignment/gate artifacts as the suite-level coordination analysis, under
+`<task-results-dir>/coordination_plots/<algorithm>/<config>/` by default.
+
+There is also a checkpoint re-evaluation helper for final suites:
+
+```bash
+venv/bin/python optuna/backfill_final_eval_rollout_returns.py \
+  --run-root results/final_rware_01/robotic_warehouse_dynamic \
+  --extra-count 9 \
+  --override-test-count 9 \
+  --override-test-count 10 \
+  --output-dir results/final_rware_01/_reanalysis_n9
+```
+
+In this mode the script does not retrain anything. It reads each run's existing `eval_by_count.csv`,
+evaluates only the missing extra counts from the saved checkpoints, and writes supplementary
+suite-level recomputed CSVs under the requested output directory.
+
 7. Export the best configs from a finished suite back into the task config folders:
 
 ```bash
