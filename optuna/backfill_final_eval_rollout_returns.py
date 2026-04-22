@@ -26,7 +26,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from algorithms.registry import get_algorithm_class
-from plot_learning_curves import PRESETS
+from plotting.plot_learning_curves import PRESETS
 from robotic_warehouse_dynamic import run as rware_run
 from robotic_warehouse_dynamic.utils import close_env_cache as rware_close_env_cache
 from robotic_warehouse_dynamic.utils import evaluate_one_count as rware_evaluate_one_count

@@ -1,8 +1,4 @@
-"""Plot PIMAC coordination traces for one final-results task/algorithm/config family.
-
-This mirrors the suite-level Optuna coordination analysis, but reads directly from
-multi-seed task result folders under `results/`.
-"""
+"""Plot PIMAC coordination traces for one final-results task/algorithm/config family."""
 
 from __future__ import annotations
 
@@ -17,10 +13,11 @@ import torch
 
 THIS_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(THIS_DIR) not in sys.path:
-    sys.path.insert(0, str(THIS_DIR))
+OPTUNA_DIR = PROJECT_ROOT / "optuna"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+if str(OPTUNA_DIR) not in sys.path:
+    sys.path.insert(0, str(OPTUNA_DIR))
 
 from algorithms.registry import get_algorithm_class
 from analyze import (
@@ -45,7 +42,11 @@ from utils import load_json, write_csv, write_json
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+PLOTTING_DIR = Path(__file__).resolve().parent
 DEFAULT_RESULTS_ROOT = REPO_ROOT / "results"
+DEFAULT_OUTPUT_ROOT = PLOTTING_DIR / "plots" / "coordination"
+DEFAULT_ROLLOUTS_PER_COUNT = 8
+DEFAULT_OVERWRITE = False
 
 
 @dataclass(frozen=True)
@@ -129,8 +130,8 @@ def _run_label(run: ResultRun) -> str:
     return f"s{int(run.seed)}"
 
 
-def default_output_dir(*, task_results_dir: Path, algorithm: str, config_name: str) -> Path:
-    return Path(task_results_dir) / "coordination_plots" / algorithm / config_name
+def default_output_dir(*, task_id: str, algorithm: str, config_name: str) -> Path:
+    return DEFAULT_OUTPUT_ROOT / task_id / algorithm / config_name
 
 
 def plot_result_coordination(
@@ -169,7 +170,7 @@ def plot_result_coordination(
     resolved_output_dir = (
         Path(output_dir)
         if output_dir is not None
-        else default_output_dir(task_results_dir=task_results_dir, algorithm=algorithm, config_name=config_name)
+        else default_output_dir(task_id=task_id, algorithm=algorithm, config_name=config_name)
     )
     if resolved_output_dir.exists() and overwrite:
         import shutil
@@ -419,10 +420,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--task", required=True, help="Task id, e.g. simple_spread_dynamic_hard.")
     parser.add_argument("--algorithm", required=True, help="Algorithm id, e.g. pimac_v6.")
     parser.add_argument("--config", required=True, help="Config name stem, e.g. active_03 or best_01.")
-    parser.add_argument("--rollouts-per-count", type=int, default=8)
+    parser.add_argument("--rollouts-per-count", type=int, default=DEFAULT_ROLLOUTS_PER_COUNT)
     parser.add_argument("--counts", type=int, nargs="*", default=None)
     parser.add_argument("--output-dir", type=str, default=None)
-    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--overwrite", action="store_true", default=DEFAULT_OVERWRITE)
     return parser
 
 

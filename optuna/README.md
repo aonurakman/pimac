@@ -168,7 +168,7 @@ The coordination analysis now writes:
 For final multi-seed benchmark runs under `results/`, there is also a small standalone plotting helper:
 
 ```bash
-venv/bin/python optuna/plot_learning_curves.py \
+venv/bin/python plotting/plot_learning_curves.py \
   --preset lbf_final_selected \
   --preset rware_final_selected \
   --preset spread_final_selected
@@ -187,16 +187,17 @@ By default, consecutive curriculum stages with the same roster-count set are mer
 visualization; disable that with `--no-merge-identical-adjacent-stages` if you want every stage shown separately.
 Use `--list-presets` to see the available presets, and tweak smoothing / CI / labels from the CLI.
 To switch which exported config is plotted for a preset, edit the `SELECTED_CONFIGS` block near the
-top of [optuna/plot_learning_curves.py](/Users/akman/pimac/optuna/plot_learning_curves.py); the
+top of [plot_learning_curves.py](/Users/akman/pimac/plotting/plot_learning_curves.py); the
 rware preset currently points at the longer-budget suite under
 `results/final_rware_long_01/robotic_warehouse_dynamic` and uses `pimac_v6/active_01` as the
 selected `PC3D` config.
 script derives the full run globs from those compact selections.
+By default, rendered plots are written under [plotting/plots](/Users/akman/pimac/plotting/plots).
 
 For coordination traces on one concrete final-results family (task + algorithm + config), use:
 
 ```bash
-venv/bin/python optuna/plot_coordination_results.py \
+venv/bin/python plotting/plot_coordination_results.py \
   --task-results-dir results/simple_spread_dynamic_hard \
   --task simple_spread_dynamic_hard \
   --algorithm pimac_v6 \
@@ -205,7 +206,7 @@ venv/bin/python optuna/plot_coordination_results.py \
 
 This reads all matching seeded runs under the requested task results directory and writes the same
 PCA/alignment/gate artifacts as the suite-level coordination analysis, under
-`<task-results-dir>/coordination_plots/<algorithm>/<config>/` by default.
+[plotting/plots/coordination](/Users/akman/pimac/plotting/plots/coordination) by default.
 
 There is also a checkpoint re-evaluation helper for final suites:
 

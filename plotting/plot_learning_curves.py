@@ -1,14 +1,4 @@
-"""Plot mean training curves with confidence bands from final run outputs.
-
-This script targets the multi-seed runs stored under `results/`, not Optuna sweep suites.
-It keeps the plotting path explicit and easy to tune:
-
-- choose one or more named presets,
-- optionally change smoothing / CI / labels from the CLI,
-- regenerate plots into `results/plots/`.
-
-The maintained presets correspond to the current selected final-task curves.
-"""
+"""Plot mean training curves with confidence bands from final multi-seed run outputs."""
 
 from __future__ import annotations
 
@@ -28,7 +18,32 @@ from matplotlib.ticker import FuncFormatter
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_OUTPUT_DIR = REPO_ROOT / "results" / "plots"
+PLOTTING_DIR = Path(__file__).resolve().parent
+DEFAULT_OUTPUT_DIR = PLOTTING_DIR / "plots"
+
+# User-tunable defaults. These are the main knobs to edit when reusing the script.
+DEFAULT_PRESETS = (
+    "lbf_final_selected",
+    "rware_final_selected",
+    "spread_final_selected",
+)
+DEFAULT_X_KEY = "global_step"
+DEFAULT_Y_KEY = "train_return_mean"
+DEFAULT_SMOOTHING_WINDOW = 100
+DEFAULT_RESET_SMOOTHING_AT_STAGE_BOUNDARIES = False
+DEFAULT_CI_LEVEL = 0.95
+DEFAULT_DPI = 300
+DEFAULT_SHOW_STAGE_BANDS = True
+DEFAULT_SHOW_STAGE_LABELS = True
+DEFAULT_STAGE_ALPHA = 0.05
+DEFAULT_SEPARATOR_ALPHA = 0.28
+DEFAULT_SAVE_STAGE_PANELS = True
+DEFAULT_STAGE_PANEL_COLUMNS = 4
+DEFAULT_STAGE_PANEL_RELATIVE_X = True
+DEFAULT_SAVE_LEGEND_SEPARATELY = False
+DEFAULT_MERGE_IDENTICAL_ADJACENT_STAGES = True
+DEFAULT_SAVE_FINAL_EVAL_BOXPLOTS = True
+DEFAULT_FONT_FAMILY = "Charter"
 PALETTE = ["#005d5d", "goldenrod", "#9f1853", "royalblue"]
 
 
@@ -708,50 +723,50 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--list-presets", action="store_true", help="Print the available preset names and exit.")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR, help="Directory for written plots.")
-    parser.add_argument("--x-key", default="global_step", help="CSV column used for the x-axis.")
-    parser.add_argument("--y-key", default="train_return_mean", help="CSV column used for the y-axis.")
-    parser.add_argument("--window", type=int, default=100, help="Rolling-mean window size.")
+    parser.add_argument("--x-key", default=DEFAULT_X_KEY, help="CSV column used for the x-axis.")
+    parser.add_argument("--y-key", default=DEFAULT_Y_KEY, help="CSV column used for the y-axis.")
+    parser.add_argument("--window", type=int, default=DEFAULT_SMOOTHING_WINDOW, help="Rolling-mean window size.")
     parser.add_argument(
         "--reset-smoothing-at-stage-boundaries",
         action=argparse.BooleanOptionalAction,
-        default=False,
+        default=DEFAULT_RESET_SMOOTHING_AT_STAGE_BOUNDARIES,
         help="Reset the rolling-mean window at curriculum stage boundaries instead of smoothing across them.",
     )
-    parser.add_argument("--ci-level", type=float, default=0.95, help="Confidence interval level, e.g. 0.95.")
-    parser.add_argument("--dpi", type=int, default=300, help="Figure DPI.")
-    parser.add_argument("--show-stage-bands", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--show-stage-labels", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--stage-alpha", type=float, default=0.05, help="Background alpha for curriculum bands.")
-    parser.add_argument("--separator-alpha", type=float, default=0.28, help="Alpha for stage separator lines.")
+    parser.add_argument("--ci-level", type=float, default=DEFAULT_CI_LEVEL, help="Confidence interval level, e.g. 0.95.")
+    parser.add_argument("--dpi", type=int, default=DEFAULT_DPI, help="Figure DPI.")
+    parser.add_argument("--show-stage-bands", action=argparse.BooleanOptionalAction, default=DEFAULT_SHOW_STAGE_BANDS)
+    parser.add_argument("--show-stage-labels", action=argparse.BooleanOptionalAction, default=DEFAULT_SHOW_STAGE_LABELS)
+    parser.add_argument("--stage-alpha", type=float, default=DEFAULT_STAGE_ALPHA, help="Background alpha for curriculum bands.")
+    parser.add_argument("--separator-alpha", type=float, default=DEFAULT_SEPARATOR_ALPHA, help="Alpha for stage separator lines.")
     parser.add_argument(
         "--save-stage-panels",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=DEFAULT_SAVE_STAGE_PANELS,
         help="Also save a secondary figure with one subplot per curriculum stage.",
     )
-    parser.add_argument("--stage-panel-columns", type=int, default=4, help="Maximum subplot columns for the stage-panel figure.")
+    parser.add_argument("--stage-panel-columns", type=int, default=DEFAULT_STAGE_PANEL_COLUMNS, help="Maximum subplot columns for the stage-panel figure.")
     parser.add_argument(
         "--stage-panel-relative-x",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=DEFAULT_STAGE_PANEL_RELATIVE_X,
         help="Plot stage-panel x-axis relative to each stage start instead of global step.",
     )
     parser.add_argument(
         "--save-legend-separately",
         action=argparse.BooleanOptionalAction,
-        default=False,
+        default=DEFAULT_SAVE_LEGEND_SEPARATELY,
         help="Omit legends inside the plot figures and write a separate *_legend.png image instead.",
     )
     parser.add_argument(
         "--merge-identical-adjacent-stages",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=DEFAULT_MERGE_IDENTICAL_ADJACENT_STAGES,
         help="Merge consecutive curriculum stages when they use the same roster-count set.",
     )
     parser.add_argument(
         "--save-final-eval-boxplots",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=DEFAULT_SAVE_FINAL_EVAL_BOXPLOTS,
         help="Also save a final-evaluation boxplot figure using one final eval mean per seed and roster size.",
     )
     return parser
@@ -761,18 +776,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    plt.rcParams["font.family"] = "Charter"
+    plt.rcParams["font.family"] = DEFAULT_FONT_FAMILY
     plt.rcParams["mathtext.fontset"] = "custom"
-    plt.rcParams["mathtext.rm"] = "Charter"
-    plt.rcParams["mathtext.it"] = "Charter:italic"
-    plt.rcParams["mathtext.bf"] = "Charter:bold"
+    plt.rcParams["mathtext.rm"] = DEFAULT_FONT_FAMILY
+    plt.rcParams["mathtext.it"] = f"{DEFAULT_FONT_FAMILY}:italic"
+    plt.rcParams["mathtext.bf"] = f"{DEFAULT_FONT_FAMILY}:bold"
 
     if args.list_presets:
         for preset_name in sorted(PRESETS):
             print(preset_name)
         return 0
 
-    selected_presets = args.preset or list(PRESETS.keys())
+    selected_presets = args.preset or list(DEFAULT_PRESETS)
     for preset_name in selected_presets:
         output_path = plot_preset(
             preset_name,

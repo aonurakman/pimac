@@ -1,4 +1,4 @@
-"""Reusable plotting helpers for Optuna suite analysis outputs."""
+"""Reusable plotting helpers shared by Optuna analysis and final-results plotters."""
 
 from __future__ import annotations
 
