@@ -21,6 +21,16 @@ SPLIT_FACE_COLORS: dict[str, str] = {
     "test": "#fdecec",
     "other": "#f4f4f4",
 }
+ALGORITHM_DISPLAY_NAMES: dict[str, str] = {
+    "mappo": "MAPPO",
+    "pimac_v0": "PIC-MAPPO",
+    "pimac_v6": "PC3D",
+    "ippo": "IPPO",
+}
+
+
+def display_algorithm_name(algorithm: str) -> str:
+    return ALGORITHM_DISPLAY_NAMES.get(str(algorithm), str(algorithm))
 
 
 def _ensure_parent(path: str | Path) -> Path:
@@ -198,7 +208,7 @@ def plot_dynamic_trial_return_boxplots(
 
         axis.set_title(f"N={n_agents} ({split_name})", fontsize=10, fontweight="bold")
         axis.set_xticks(positions)
-        axis.set_xticklabels(ordered_algorithms, rotation=30, ha="right", fontsize=8)
+        axis.set_xticklabels([display_algorithm_name(algorithm) for algorithm in ordered_algorithms], rotation=30, ha="right", fontsize=8)
         axis.grid(True, axis="y", alpha=0.25)
         axis.set_ylim(y_min - y_pad, y_max + y_pad)
         axis.tick_params(axis="y", labelsize=8)

@@ -45,6 +45,12 @@ DEFAULT_MERGE_IDENTICAL_ADJACENT_STAGES = True
 DEFAULT_SAVE_FINAL_EVAL_BOXPLOTS = True
 DEFAULT_FONT_FAMILY = "Charter"
 PALETTE = ["#005d5d", "goldenrod", "#9f1853", "royalblue"]
+ALGORITHM_LABELS = {
+    "mappo": "MAPPO",
+    "pimac_v0": "PIC-MAPPO",
+    "pimac_v6": "PC3D",
+    "ippo": "IPPO",
+}
 
 
 @dataclass(frozen=True)
@@ -118,17 +124,17 @@ def _build_selected_preset(selected: dict[str, str]) -> PlotPreset:
         stage_source=f"{results_root}/pimac_v6/{run_prefix}_pimac_v6_{pc3d_config}_s42/train_history.csv",
         series=(
             SeriesSpec(
-                label="MAPPO",
+                label=ALGORITHM_LABELS["mappo"],
                 glob_pattern=f"{results_root}/mappo/{run_prefix}_mappo_{selected['mappo']}_s*/train_history.csv",
                 color=PALETTE[0],
             ),
             SeriesSpec(
-                label="PIMAC v0",
+                label=ALGORITHM_LABELS["pimac_v0"],
                 glob_pattern=f"{results_root}/pimac_v0/{run_prefix}_pimac_v0_{selected['pimac_v0']}_s*/train_history.csv",
                 color=PALETTE[1],
             ),
             SeriesSpec(
-                label="PC3D",
+                label=ALGORITHM_LABELS["pimac_v6"],
                 glob_pattern=f"{results_root}/pimac_v6/{run_prefix}_pimac_v6_{pc3d_config}_s*/train_history.csv",
                 color=PALETTE[2],
             ),
@@ -500,7 +506,7 @@ def plot_final_eval_boxplots(
     fig, axes = plt.subplots(
         nrows=nrows,
         ncols=ncols,
-        figsize=(2.75 * ncols, 3.05),
+        figsize=(3.15 * ncols, 3.05),
         dpi=dpi,
         sharey=False,
         squeeze=False,
@@ -533,9 +539,9 @@ def plot_final_eval_boxplots(
         axis.grid(True, axis="y", alpha=0.18)
 
     fig.suptitle(f"{simplified_task_title(preset.title)}: final evaluation", fontsize=12, fontweight="bold", y=0.975)
-    fig.supylabel("Mean evaluation returns")
+    fig.supylabel("Mean evaluation returns", x=0.012)
     fig.supxlabel("Algorithm")
-    fig.tight_layout(rect=(0.01, 0.045, 0.997, 0.93), pad=0.45, w_pad=0.3, h_pad=0.4)
+    fig.tight_layout(rect=(0.04, 0.045, 0.997, 0.93), pad=0.5, w_pad=0.48, h_pad=0.4)
     fig.savefig(output_path, bbox_inches="tight")
     plt.close(fig)
     return output_path
