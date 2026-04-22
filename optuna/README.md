@@ -188,6 +188,9 @@ visualization; disable that with `--no-merge-identical-adjacent-stages` if you w
 Use `--list-presets` to see the available presets, and tweak smoothing / CI / labels from the CLI.
 To switch which exported config is plotted for a preset, edit the `SELECTED_CONFIGS` block near the
 top of [optuna/plot_learning_curves.py](/Users/akman/pimac/optuna/plot_learning_curves.py); the
+rware preset currently points at the longer-budget suite under
+`results/final_rware_long_01/robotic_warehouse_dynamic` and uses `pimac_v6/active_01` as the
+selected `PC3D` config.
 script derives the full run globs from those compact selections.
 
 For coordination traces on one concrete final-results family (task + algorithm + config), use:

@@ -21,6 +21,7 @@ from lbf_hard.utils import (
     EvalResult,
     FixedEntityObservationWrapper,
     StageWindow,
+    _checkpoint_selection_mode,
     _configured_periodic_eval_counts,
     build_curriculum_windows,
     build_summary,
@@ -308,6 +309,7 @@ def run_task(
     trajectory_ckpt_dir = out_dir / "checkpoints"
     curriculum_windows: list[StageWindow] = build_curriculum_windows(task_config)
     periodic_eval_counts = _configured_periodic_eval_counts(task_config)
+    uses_validation_selection = _checkpoint_selection_mode(task_config) == "best_validation"
     extra_checkpoint_episodes = set(configured_checkpoint_episodes(task_config))
     if extra_checkpoint_episodes:
         trajectory_ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -432,14 +434,14 @@ def run_task(
                 validation_results.extend(eval_results)
 
                 eligible_results = eval_results if is_checkpoint_selection_eligible(task_config, episode_index + 1, curriculum_windows) else []
-                if eligible_results:
+                if uses_validation_selection and eligible_results:
                     score = float(grouped_eval_metrics(task_config, eligible_results)["selection_score"])
                     if score > (best_eval + float(task_config["min_improve"])):
                         learner.save_checkpoint(best_ckpt_path)
                         best_eval = score
 
         learner.save_checkpoint(final_ckpt_path)
-        if validation_results and not best_ckpt_path.is_file():
+        if uses_validation_selection and validation_results and not best_ckpt_path.is_file():
             learner.save_checkpoint(best_ckpt_path)
 
         best_checkpoint_test_results: list[EvalResult] = []
@@ -463,7 +465,7 @@ def run_task(
                 summarize_episode_return_fn=summarize_episode_return,
             ),
         )
-        if validation_results:
+        if uses_validation_selection and validation_results:
             best_learner = type(learner).load_checkpoint(
                 best_ckpt_path,
                 env_spec=learner.env_spec,

@@ -326,18 +326,30 @@ def _configured_test_counts(task_config: dict) -> tuple[int, ...]:
     return tuple()
 
 
+def _checkpoint_selection_mode(task_config: dict) -> str:
+    """Return how checkpoints should be selected when periodic evaluation is enabled."""
+    mode = str(task_config.get("checkpoint_selection_mode", "best_validation"))
+    if mode not in {"best_validation", "final"}:
+        raise ValueError(f"Unsupported checkpoint_selection_mode: {mode!r}")
+    return mode
+
+
 def _configured_periodic_eval_counts(task_config: dict) -> tuple[int, ...]:
     """Return the counts allowed during periodic checkpoint evaluation."""
+    configured_train_counts = tuple(int(value) for value in _configured_train_counts(task_config))
+    configured_validation_counts = tuple(int(value) for value in _configured_validation_counts(task_config))
+    periodic_counts = configured_train_counts + tuple(
+        count for count in configured_validation_counts if count not in configured_train_counts
+    )
+    if periodic_counts:
+        return periodic_counts
+
     configured_eval_counts = tuple(int(value) for value in task_config.get("eval_counts", []))
     test_counts = set(_configured_test_counts(task_config))
     if configured_eval_counts:
         return tuple(count for count in configured_eval_counts if count not in test_counts)
 
-    allowed_counts = (
-        *tuple(int(value) for value in _configured_train_counts(task_config)),
-        *tuple(int(value) for value in _configured_validation_counts(task_config)),
-    )
-    return tuple(dict.fromkeys(count for count in allowed_counts if count not in test_counts))
+    return tuple()
 
 
 def _split_mean(count_to_mean: dict[int, float], counts: Sequence[int]) -> float:
@@ -537,7 +549,7 @@ def build_summary(
     eligible_validation_results = filter_selection_eligible_results(task_config, validation_results, curriculum_windows)
     filtered_validation_summary = _validation_summary(task_config, eligible_validation_results)
     final_test_summary = grouped_eval_metrics(task_config, final_checkpoint_test_results)
-    uses_validation_selection = bool(validation_results)
+    uses_validation_selection = _checkpoint_selection_mode(task_config) == "best_validation" and bool(validation_results)
     selected_checkpoint = "final_checkpoint"
     test_summary = {
         "final_checkpoint": final_test_summary,
@@ -602,9 +614,14 @@ def build_summary(
         "validation": filtered_validation_summary,
         "test": test_summary,
         "checkpoint_selection": {
-            "selection_stage_index": int(task_config["checkpoint_selection_stage_index"]),
-            "selection_start_episode": validation_selection_start_episode(task_config, curriculum_windows),
-            "selection_eligible_checkpoint_count": int(len({eval_result.checkpoint_episode for eval_result in eligible_validation_results})),
+            "mode": _checkpoint_selection_mode(task_config),
+            "selection_stage_index": int(task_config["checkpoint_selection_stage_index"]) if uses_validation_selection else -1,
+            "selection_start_episode": validation_selection_start_episode(task_config, curriculum_windows)
+            if uses_validation_selection
+            else -1,
+            "selection_eligible_checkpoint_count": int(len({eval_result.checkpoint_episode for eval_result in eligible_validation_results}))
+            if uses_validation_selection
+            else 0,
             "logged_checkpoint_count": int(len({eval_result.checkpoint_episode for eval_result in validation_results})),
             "logged_best_validation_mean": float(logged_validation_summary["best_validation_mean"]),
             "logged_best_validation_selection_score": float(logged_validation_summary["best_validation_selection_score"]),

@@ -7,7 +7,7 @@ if [ "${1:-}" = "" ]; then
 fi
 
 RUN_NAME="$1"
-MAX_PARALLEL="${2:-16}"
+MAX_PARALLEL="${2:-30}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${SLURM_SUBMIT_DIR:-${PWD}}"
@@ -62,18 +62,22 @@ jobs = [
         repo_root / "lbf_hard" / "task.json",
         results_root / "_task_configs" / "lbf_hard_final_with_checkpoints.json",
         {
-            "episodes": 12000,
-            "eval_every_episodes": 0,
+            "episodes": 40000,
+            "eval_every_episodes": 2000,
+            "checkpoint_selection_mode": "final",
+            "validation_rollouts": 10,
             "test_rollouts": 100,
-            "save_checkpoint_every_episodes": 1200,
+            "save_checkpoint_every_episodes": 2000,
         },
     ),
     (
         repo_root / "simple_spread_dynamic_hard" / "task.json",
         results_root / "_task_configs" / "spread_hard_final_with_checkpoints.json",
         {
-            "episodes": 20000,
-            "eval_every_episodes": 0,
+            "episodes": 40000,
+            "eval_every_episodes": 2000,
+            "checkpoint_selection_mode": "final",
+            "validation_rollouts": 10,
             "test_rollouts": 100,
             "save_checkpoint_every_episodes": 2000,
         },
@@ -130,15 +134,15 @@ launch_job() {
 
 LBF_SPECS=(
     "mappo:best_01"
+    "ippo:best_01"
     "pimac_v0:best_01"
-    "pimac_v6:active_01"
     "pimac_v6:active_03"
 )
 
 SPREAD_SPECS=(
     "mappo:best_01"
+    "ippo:best_01"
     "pimac_v0:best_01"
-    "pimac_v6:active_01"
     "pimac_v6:active_03"
 )
 

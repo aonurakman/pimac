@@ -11,6 +11,7 @@ import csv
 import json
 import math
 import os
+import random
 import time
 from pathlib import Path
 from typing import Optional, Sequence
@@ -102,6 +103,7 @@ def write_csv(path: str | Path, rows: Sequence[dict], fieldnames: Sequence[str] 
 def set_global_seeds(seed: int) -> None:
     import torch
 
+    random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():

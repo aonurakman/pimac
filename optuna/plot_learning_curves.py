@@ -73,11 +73,11 @@ SELECTED_CONFIGS: dict[str, dict[str, str]] = {
         "title": "RWARE Final Learning Curves",
         "output_filename": "rware_final_learning_curves.png",
         "task_config_path": "robotic_warehouse_dynamic/task.json",
-        "results_root": "results/final_rware_01/robotic_warehouse_dynamic",
+        "results_root": "results/final_rware_long_01/robotic_warehouse_dynamic",
         "run_prefix": "final_robotic_warehouse_dynamic",
         "mappo": "best_01",
         "pimac_v0": "best_01",
-        "pc3d": "active_02",
+        "pc3d": "active_01",
     },
     "spread_final_selected": {
         "title": "Spread Hard Final Learning Curves",
