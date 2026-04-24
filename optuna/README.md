@@ -188,25 +188,29 @@ visualization; disable that with `--no-merge-identical-adjacent-stages` if you w
 Use `--list-presets` to see the available presets, and tweak smoothing / CI / labels from the CLI.
 To switch which exported config is plotted for a preset, edit the `SELECTED_CONFIGS` block near the
 top of [plot_learning_curves.py](/Users/akman/pimac/plotting/plot_learning_curves.py); the
-rware preset currently points at the longer-budget suite under
-`results/final_rware_long_01/robotic_warehouse_dynamic` and uses `pimac_v6/active_01` as the
-selected `PC3D` config.
+rware preset currently points at the integrated longer-budget suite under `results/rware` and uses
+`pimac_v6/active_01` as the selected `PC3D` config.
 script derives the full run globs from those compact selections.
 By default, rendered plots are written under [plotting/plots](/Users/akman/pimac/plotting/plots).
 
-For coordination traces on one concrete final-results family (task + algorithm + config), use:
+For compact coordination heatmaps for the maintained selected PC3D models, use:
 
 ```bash
 venv/bin/python plotting/plot_coordination_results.py \
-  --task-results-dir results/simple_spread_dynamic_hard \
-  --task simple_spread_dynamic_hard \
-  --algorithm pimac_v6 \
-  --config active_03
+  --overwrite
 ```
 
-This reads all matching seeded runs under the requested task results directory and writes the same
-PCA/alignment/gate artifacts as the suite-level coordination analysis, under
-[plotting/plots/coordination](/Users/akman/pimac/plotting/plots/coordination) by default.
+By default this reads the maintained `results/spread`, `results/lbf_hard`, and `results/rware`
+roots, aggregates all matching seeded runs, and writes the artifacts under
+[plotting/plots/coordination](/Users/akman/pimac/plotting/plots/coordination). The default selected
+models are defined in the `DEFAULT_TASK_MODEL_SELECTIONS` block near the top of
+[plot_coordination_results.py](/Users/akman/pimac/plotting/plot_coordination_results.py); this
+matches the main plot/table choices: Spread uses `pimac_v6/active_03`, while LBF and RWARE use
+`pimac_v6/active_01`. The script runs tasks in parallel by default and writes one
+`alignment_gate_heatmap.png` per task, colored by teacher-student cosine alignment with
+context-reliance gate mean ± std printed in each cell. To restrict or customize the roots, repeat `--task` and
+`--task-results-dir` in matching order; to override selected models from the CLI, repeat
+`--task-model TASK=ALGORITHM:CONFIG`.
 
 There is also a checkpoint re-evaluation helper for final suites:
 

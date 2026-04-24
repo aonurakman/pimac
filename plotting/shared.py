@@ -63,27 +63,30 @@ def _n_agents_color_index_map(counts: Sequence[int]) -> dict[int, int]:
     return {int(count): index for index, count in enumerate(sorted(int(value) for value in counts))}
 
 
-def _project_pca(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def _project_pca(matrix: np.ndarray, *, n_components: int = 2) -> tuple[np.ndarray, np.ndarray]:
     array = np.asarray(matrix, dtype=np.float32)
     if array.ndim != 2:
         raise ValueError("PCA projection expects a 2D matrix.")
+    n_components = int(n_components)
+    if n_components <= 0:
+        raise ValueError("PCA projection expects a positive component count.")
     if array.shape[0] == 0:
-        return np.zeros((0, 2), dtype=np.float32), np.zeros(2, dtype=np.float32)
+        return np.zeros((0, n_components), dtype=np.float32), np.zeros(n_components, dtype=np.float32)
     centered = array - np.mean(array, axis=0, keepdims=True)
     if centered.shape[0] == 1 or centered.shape[1] == 0:
-        return np.zeros((centered.shape[0], 2), dtype=np.float32), np.zeros(2, dtype=np.float32)
+        return np.zeros((centered.shape[0], n_components), dtype=np.float32), np.zeros(n_components, dtype=np.float32)
     _, singular_values, vt = np.linalg.svd(centered, full_matrices=False)
-    components = vt[:2]
+    components = vt[:n_components]
     projected = centered @ components.T
-    if projected.shape[1] < 2:
-        projected = np.pad(projected, ((0, 0), (0, 2 - projected.shape[1])), mode="constant")
+    if projected.shape[1] < n_components:
+        projected = np.pad(projected, ((0, 0), (0, n_components - projected.shape[1])), mode="constant")
     explained_variance = (singular_values ** 2) / max(1, centered.shape[0] - 1)
     explained_total = float(np.sum(explained_variance))
     if explained_total <= 1e-12:
-        explained_ratio = np.zeros(2, dtype=np.float32)
+        explained_ratio = np.zeros(n_components, dtype=np.float32)
     else:
-        explained_ratio = np.zeros(2, dtype=np.float32)
-        limit = min(2, explained_variance.shape[0])
+        explained_ratio = np.zeros(n_components, dtype=np.float32)
+        limit = min(n_components, explained_variance.shape[0])
         explained_ratio[:limit] = explained_variance[:limit] / explained_total
     return projected.astype(np.float32), explained_ratio.astype(np.float32)
 
@@ -95,6 +98,7 @@ def build_grouped_pca_rows(
     dim_prefix: str = "dim_",
     max_points_per_group: int = 4000,
     sample_seed: int = 0,
+    n_components: int = 2,
 ) -> list[dict[str, Any]]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
@@ -117,21 +121,19 @@ def build_grouped_pca_rows(
             [[float(row[key]) for key in dim_keys] for row in sampled_rows],
             dtype=np.float32,
         )
-        projected, explained_ratio = _project_pca(matrix)
+        projected, explained_ratio = _project_pca(matrix, n_components=n_components)
         for row, coords in zip(sampled_rows, projected):
-            projected_rows.append(
-                {
-                    "run_label": group_name,
-                    "algorithm": row.get("algorithm"),
-                    "rank": row.get("rank"),
-                    "trial_number": row.get("trial_number"),
-                    "n_agents": int(row["n_agents"]),
-                    "pc1": float(coords[0]),
-                    "pc2": float(coords[1]),
-                    "pca_explained_pc1": float(explained_ratio[0]),
-                    "pca_explained_pc2": float(explained_ratio[1]),
-                }
-            )
+            projected_row = {
+                "run_label": group_name,
+                "algorithm": row.get("algorithm"),
+                "rank": row.get("rank"),
+                "trial_number": row.get("trial_number"),
+                "n_agents": int(row["n_agents"]),
+            }
+            for component_index in range(int(n_components)):
+                projected_row[f"pc{component_index + 1}"] = float(coords[component_index])
+                projected_row[f"pca_explained_pc{component_index + 1}"] = float(explained_ratio[component_index])
+            projected_rows.append(projected_row)
     return projected_rows
 
 
@@ -240,6 +242,7 @@ def plot_pca_projection_grid(
     *,
     output_path: str | Path,
     title: str,
+    dpi: int = 300,
 ) -> Path:
     if not rows:
         raise ValueError("PCA projection plot requires at least one row.")
@@ -257,7 +260,6 @@ def plot_pca_projection_grid(
         ncols=ncols,
         figsize=(4.6 * ncols, 4.0 * nrows),
         squeeze=False,
-        constrained_layout=True,
     )
 
     for axis in axes.flat[len(run_labels) :]:
@@ -287,14 +289,91 @@ def plot_pca_projection_grid(
         axis.set_ylabel("PC2", fontsize=9)
         axis.grid(True, alpha=0.25)
 
-    fig.suptitle(title, fontsize=12, fontweight="bold")
+    fig.suptitle(title, fontsize=12, fontweight="bold", y=0.985)
+    fig.subplots_adjust(left=0.06, right=0.90, bottom=0.07, top=0.84, wspace=0.28, hspace=0.50)
     if scatter_artist is not None:
         colorbar = fig.colorbar(scatter_artist, ax=[axis for axis in axes.flat if axis.get_visible()], fraction=0.02, pad=0.02)
         colorbar.set_ticks(np.arange(len(count_values)))
         colorbar.set_ticklabels([str(value) for value in count_values])
         colorbar.set_label("Number of agents", fontsize=9)
-    fig.savefig(resolved_output_path, dpi=220, bbox_inches="tight")
+    fig.savefig(resolved_output_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
+    return resolved_output_path
+
+
+def plot_task_count_alignment_gate_heatmap(
+    rows: Sequence[dict[str, Any]],
+    *,
+    output_path: str | Path,
+    title: str | None = None,
+    dpi: int = 300,
+    font_family: str = "Charter",
+) -> Path:
+    if not rows:
+        raise ValueError("Task-count alignment heatmap requires at least one row.")
+    resolved_output_path = _ensure_parent(output_path)
+
+    task_labels = list(dict.fromkeys(str(row["task_label"]) for row in rows))
+    counts = sorted({int(row["n_agents"]) for row in rows})
+    alignment_mean = np.full((len(task_labels), len(counts)), np.nan, dtype=np.float32)
+    alignment_std = np.full_like(alignment_mean, np.nan)
+    gate_mean = np.full_like(alignment_mean, np.nan)
+    gate_std = np.full_like(alignment_mean, np.nan)
+
+    for row in rows:
+        task_index = task_labels.index(str(row["task_label"]))
+        count_index = counts.index(int(row["n_agents"]))
+        alignment_mean[task_index, count_index] = float(row["alignment_mean"])
+        alignment_std[task_index, count_index] = float(row["alignment_std"])
+        gate_value = row.get("gate_mean")
+        if gate_value is not None:
+            gate_mean[task_index, count_index] = float(gate_value)
+        gate_std_value = row.get("gate_std")
+        if gate_std_value is not None:
+            gate_std[task_index, count_index] = float(gate_std_value)
+
+    with plt.rc_context(
+        {
+            "font.family": "serif",
+            "font.serif": [font_family, "XCharter", "Bitstream Charter", "DejaVu Serif"],
+        }
+    ):
+        masked_alignment = np.ma.masked_invalid(alignment_mean)
+        fig_height = max(2.2, 0.62 * len(task_labels) + 1.55)
+        fig, axis = plt.subplots(figsize=(1.18 * len(counts) + 2.6, fig_height))
+        image = axis.imshow(masked_alignment, aspect="auto", cmap="viridis", vmin=0.0, vmax=1.0)
+        axis.set_xticks(np.arange(len(counts)))
+        axis.set_xticklabels([str(value) for value in counts], fontsize=10)
+        axis.set_yticks([])
+        axis.set_xlabel("Number of agents", fontsize=12)
+        if title:
+            axis.set_title(title, fontsize=12, fontweight="bold")
+
+        for row_index in range(alignment_mean.shape[0]):
+            for col_index in range(alignment_mean.shape[1]):
+                if not np.isfinite(alignment_mean[row_index, col_index]):
+                    continue
+                if not np.isfinite(gate_mean[row_index, col_index]):
+                    cell_text = "NA"
+                else:
+                    cell_text = f"{gate_mean[row_index, col_index]:.2f}\n±{gate_std[row_index, col_index]:.2f}"
+                text_color = "white" if alignment_mean[row_index, col_index] < 0.55 else "#111111"
+                axis.text(
+                    col_index,
+                    row_index,
+                    cell_text,
+                    ha="center",
+                    va="center",
+                    color=text_color,
+                    fontsize=9,
+                )
+
+        colorbar = fig.colorbar(image, ax=axis, fraction=0.03, pad=0.02)
+        colorbar.set_label("Cosine alignment", fontsize=8, labelpad=2)
+        colorbar.ax.tick_params(labelsize=8)
+        fig.tight_layout()
+        fig.savefig(resolved_output_path, dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
     return resolved_output_path
 
 
@@ -303,6 +382,7 @@ def plot_alignment_heatmap(
     *,
     output_path: str | Path,
     title: str,
+    dpi: int = 300,
 ) -> Path:
     if not rows:
         raise ValueError("Alignment heatmap requires at least one row.")
@@ -345,7 +425,7 @@ def plot_alignment_heatmap(
     colorbar = fig.colorbar(image, ax=axis, fraction=0.03, pad=0.02)
     colorbar.set_label("Teacher-student cosine alignment", fontsize=9)
     fig.tight_layout()
-    fig.savefig(resolved_output_path, dpi=220, bbox_inches="tight")
+    fig.savefig(resolved_output_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
     return resolved_output_path
 

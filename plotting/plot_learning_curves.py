@@ -29,14 +29,14 @@ DEFAULT_PRESETS = (
 )
 DEFAULT_X_KEY = "global_step"
 DEFAULT_Y_KEY = "train_return_mean"
-DEFAULT_SMOOTHING_WINDOW = 100
+DEFAULT_SMOOTHING_WINDOW = 250
 DEFAULT_RESET_SMOOTHING_AT_STAGE_BOUNDARIES = False
 DEFAULT_CI_LEVEL = 0.95
 DEFAULT_DPI = 300
 DEFAULT_SHOW_STAGE_BANDS = True
 DEFAULT_SHOW_STAGE_LABELS = True
-DEFAULT_STAGE_ALPHA = 0.05
-DEFAULT_SEPARATOR_ALPHA = 0.28
+DEFAULT_STAGE_ALPHA = 0.075
+DEFAULT_SEPARATOR_ALPHA = 0.42
 DEFAULT_SAVE_STAGE_PANELS = True
 DEFAULT_STAGE_PANEL_COLUMNS = 4
 DEFAULT_STAGE_PANEL_RELATIVE_X = True
@@ -44,12 +44,24 @@ DEFAULT_SAVE_LEGEND_SEPARATELY = False
 DEFAULT_MERGE_IDENTICAL_ADJACENT_STAGES = True
 DEFAULT_SAVE_FINAL_EVAL_BOXPLOTS = True
 DEFAULT_FONT_FAMILY = "Charter"
-PALETTE = ["#005d5d", "goldenrod", "#9f1853", "royalblue"]
+DEFAULT_AXIS_LABEL_FONTSIZE = 13
+DEFAULT_COMPACT_LINE_Y_LIMITS = True
+DEFAULT_LINE_Y_PADDING_FRACTION = 0.06
+DEFAULT_COMPRESS_LOW_BOXPLOT_OUTLIERS = True
+DEFAULT_BOXPLOT_LOW_OUTLIER_GAP_FRACTION = 0.55
+DEFAULT_LOW_BOXPLOT_MARKER_SIZE = 58
+SERIES_ORDER = ("ippo", "mappo", "pimac_v0", "pimac_v6")
 ALGORITHM_LABELS = {
     "mappo": "MAPPO",
     "pimac_v0": "PIC-MAPPO",
     "pimac_v6": "PC3D",
     "ippo": "IPPO",
+}
+ALGORITHM_COLORS = {
+    "mappo": "#005d5d",
+    "pimac_v0": "goldenrod",
+    "pimac_v6": "#9f1853",
+    "ippo": "royalblue",
 }
 
 
@@ -81,31 +93,34 @@ class StageSegment:
 
 SELECTED_CONFIGS: dict[str, dict[str, str]] = {
     "lbf_final_selected": {
-        "title": "LBF Hard Final Learning Curves",
+        "title": "LBF",
         "output_filename": "lbf_hard_final_learning_curves.png",
         "task_config_path": "lbf_hard/task.json",
         "results_root": "results/lbf_hard",
         "run_prefix": "final_lbf_hard",
+        "ippo": "best_01",
         "mappo": "best_01",
         "pimac_v0": "best_01",
         "pc3d": "active_01",
     },
     "rware_final_selected": {
-        "title": "RWARE Final Learning Curves",
+        "title": "RWARE",
         "output_filename": "rware_final_learning_curves.png",
         "task_config_path": "robotic_warehouse_dynamic/task.json",
-        "results_root": "results/final_rware_long_01/robotic_warehouse_dynamic",
+        "results_root": "results/rware",
         "run_prefix": "final_robotic_warehouse_dynamic",
+        "ippo": "best_01",
         "mappo": "best_01",
         "pimac_v0": "best_01",
         "pc3d": "active_01",
     },
     "spread_final_selected": {
-        "title": "Spread Hard Final Learning Curves",
+        "title": "Spread",
         "output_filename": "spread_hard_final_learning_curves.png",
         "task_config_path": "simple_spread_dynamic_hard/task.json",
-        "results_root": "results/simple_spread_dynamic_hard",
+        "results_root": "results/spread",
         "run_prefix": "final_simple_spread_dynamic_hard",
+        "ippo": "best_01",
         "mappo": "best_01",
         "pimac_v0": "best_01",
         "pc3d": "active_03",
@@ -117,28 +132,26 @@ def _build_selected_preset(selected: dict[str, str]) -> PlotPreset:
     results_root = str(selected["results_root"]).rstrip("/")
     run_prefix = str(selected["run_prefix"])
     pc3d_config = str(selected["pc3d"])
+    config_by_algorithm = {
+        "ippo": str(selected["ippo"]),
+        "mappo": str(selected["mappo"]),
+        "pimac_v0": str(selected["pimac_v0"]),
+        "pimac_v6": pc3d_config,
+    }
+    series_specs = tuple(
+        SeriesSpec(
+            label=ALGORITHM_LABELS[algorithm],
+            glob_pattern=f"{results_root}/{algorithm}/{run_prefix}_{algorithm}_{config_by_algorithm[algorithm]}_s*/train_history.csv",
+            color=ALGORITHM_COLORS[algorithm],
+        )
+        for algorithm in SERIES_ORDER
+    )
     return PlotPreset(
         title=str(selected["title"]),
         output_filename=str(selected["output_filename"]),
         task_config_path=str(selected["task_config_path"]),
         stage_source=f"{results_root}/pimac_v6/{run_prefix}_pimac_v6_{pc3d_config}_s42/train_history.csv",
-        series=(
-            SeriesSpec(
-                label=ALGORITHM_LABELS["mappo"],
-                glob_pattern=f"{results_root}/mappo/{run_prefix}_mappo_{selected['mappo']}_s*/train_history.csv",
-                color=PALETTE[0],
-            ),
-            SeriesSpec(
-                label=ALGORITHM_LABELS["pimac_v0"],
-                glob_pattern=f"{results_root}/pimac_v0/{run_prefix}_pimac_v0_{selected['pimac_v0']}_s*/train_history.csv",
-                color=PALETTE[1],
-            ),
-            SeriesSpec(
-                label=ALGORITHM_LABELS["pimac_v6"],
-                glob_pattern=f"{results_root}/pimac_v6/{run_prefix}_pimac_v6_{pc3d_config}_s*/train_history.csv",
-                color=PALETTE[2],
-            ),
-        ),
+        series=series_specs,
     )
 
 
@@ -417,7 +430,7 @@ def save_standalone_legend(output_path: Path, series_specs: Sequence[SeriesSpec]
     handles = build_legend_handles(series_specs)
     fig = plt.figure(figsize=(max(2.8, 1.8 * len(handles)), 0.9), dpi=dpi)
     fig.legend(handles=handles, frameon=False, ncol=max(1, len(handles)), loc="center")
-    fig.savefig(legend_path, bbox_inches="tight", pad_inches=0.05, transparent=True)
+    fig.savefig(legend_path, bbox_inches="tight", pad_inches=0.05, transparent=True, dpi=dpi)
     plt.close(fig)
     return legend_path
 
@@ -442,8 +455,19 @@ def display_x_label(x_key: str) -> str:
     return x_key.replace("_", " ").title()
 
 
-def simplified_task_title(raw_title: str) -> str:
-    return raw_title.replace(" Final Learning Curves", "")
+def display_y_label(y_key: str) -> str:
+    if y_key == "train_return_mean":
+        return "Mean training return"
+    return y_key.replace("_", " ").title()
+
+
+def display_task_title(raw_title: str) -> str:
+    legacy_title = raw_title.replace(" Final Learning Curves", "")
+    return {
+        "Spread Hard": "Spread",
+        "LBF Hard": "LBF",
+        "RWARE": "RWARE",
+    }.get(legacy_title, legacy_title)
 
 
 def load_task_count_split_labels(task_config_path: Path) -> dict[int, str]:
@@ -475,11 +499,56 @@ def coarse_split_label(label: str) -> str:
     return "seen" if label == "seen" else "unseen"
 
 
+def should_compress_low_boxplot(values: Sequence[float], reference_values: Sequence[float], *, gap_fraction: float) -> bool:
+    if not values or not reference_values:
+        return False
+    reference_min = min(reference_values)
+    reference_max = max(reference_values)
+    reference_range = max(reference_max - reference_min, 1e-9)
+    return max(values) < reference_min - float(gap_fraction) * reference_range
+
+
+def compact_y_limits_from_mean_curves(
+    mean_curves: Sequence[np.ndarray],
+    *,
+    padding_fraction: float = DEFAULT_LINE_Y_PADDING_FRACTION,
+) -> tuple[float, float]:
+    values = [np.asarray(curve, dtype=np.float64) for curve in mean_curves if len(curve) > 0]
+    if not values:
+        raise ValueError("Cannot compute compact y-limits without plotted curves.")
+    flat = np.concatenate(values)
+    y_min = float(np.min(flat))
+    y_max = float(np.max(flat))
+    span = y_max - y_min
+    if span <= 0.0:
+        span = max(abs(y_min), 1.0)
+    padding = max(1e-6, float(padding_fraction) * span)
+    return y_min - padding, y_max + padding
+
+
+def add_low_out_of_range_marker(axis, *, position: int, y_min: float, y_max: float, color: str) -> None:
+    marker_y = y_min + 0.025 * (y_max - y_min)
+    axis.scatter(
+        [position],
+        [marker_y],
+        marker="v",
+        s=DEFAULT_LOW_BOXPLOT_MARKER_SIZE,
+        color=color,
+        edgecolor="#222222",
+        linewidth=0.35,
+        alpha=0.95,
+        clip_on=False,
+        zorder=4,
+    )
+
+
 def plot_final_eval_boxplots(
     preset: PlotPreset,
     *,
     output_path: Path,
     dpi: int,
+    compress_low_outliers: bool = DEFAULT_COMPRESS_LOW_BOXPLOT_OUTLIERS,
+    low_outlier_gap_fraction: float = DEFAULT_BOXPLOT_LOW_OUTLIER_GAP_FRACTION,
 ) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     split_labels = load_task_count_split_labels(REPO_ROOT / preset.task_config_path)
@@ -506,7 +575,7 @@ def plot_final_eval_boxplots(
     fig, axes = plt.subplots(
         nrows=nrows,
         ncols=ncols,
-        figsize=(3.15 * ncols, 3.05),
+        figsize=(2 * ncols, 3.2),
         dpi=dpi,
         sharey=False,
         squeeze=False,
@@ -519,8 +588,39 @@ def plot_final_eval_boxplots(
     for axis, count in zip(axes.flat, counts):
         split_label = coarse_split_label(split_labels.get(count, "unseen"))
         grouped_values = values_by_count_by_series[count]
+        reference_values = [
+            value
+            for series, values in zip(preset.series, grouped_values)
+            if series.label != "IPPO"
+            for value in values
+        ]
+        compressed_markers: list[tuple[int, str]] = []
+        plotted_values: list[list[float]] = []
+        plotted_positions: list[int] = []
+        plotted_series: list[SeriesSpec] = []
+        for position, (series, values) in enumerate(zip(preset.series, grouped_values), start=1):
+            compress_series = (
+                bool(compress_low_outliers)
+                and series.label == "IPPO"
+                and should_compress_low_boxplot(values, reference_values, gap_fraction=low_outlier_gap_fraction)
+            )
+            if compress_series:
+                compressed_markers.append((position, series.color))
+                continue
+            plotted_values.append(values)
+            plotted_positions.append(position)
+            plotted_series.append(series)
+
+        plotted_flat_values = [value for values in plotted_values for value in values]
+        y_min = min(plotted_flat_values)
+        y_max = max(plotted_flat_values)
+        y_pad = max(1e-6, 0.08 * (y_max - y_min if y_max > y_min else max(abs(y_min), 1.0)))
+        y_min -= y_pad
+        y_max += y_pad
+
         boxplot = axis.boxplot(
-            grouped_values,
+            plotted_values,
+            positions=plotted_positions,
             patch_artist=True,
             widths=0.65,
             medianprops={"color": "#222222", "linewidth": 1.4},
@@ -529,20 +629,25 @@ def plot_final_eval_boxplots(
             boxprops={"linewidth": 1.0, "color": "#444444"},
             flierprops={"marker": "o", "markersize": 3, "markerfacecolor": "#666666", "markeredgewidth": 0.0, "alpha": 0.5},
         )
-        for patch, series in zip(boxplot["boxes"], preset.series):
+        for patch, series in zip(boxplot["boxes"], plotted_series):
             patch.set_facecolor(series.color)
             patch.set_alpha(box_face_alpha)
 
+        axis.set_ylim(y_min, y_max)
+        for position, color in compressed_markers:
+            add_low_out_of_range_marker(axis, position=position, y_min=y_min, y_max=y_max, color=color)
+
         axis.set_title(f"n={count} ({split_label})", fontsize=10, fontweight="bold")
         axis.set_xticks(range(1, len(preset.series) + 1))
-        axis.set_xticklabels([series.label for series in preset.series], rotation=20, ha="right")
+        axis.set_xticklabels([series.label for series in preset.series], rotation=20, ha="right", fontsize=8)
+        axis.tick_params(axis="x", pad=0)
         axis.grid(True, axis="y", alpha=0.18)
 
-    fig.suptitle(f"{simplified_task_title(preset.title)}: final evaluation", fontsize=12, fontweight="bold", y=0.975)
-    fig.supylabel("Mean evaluation returns", x=0.012)
-    fig.supxlabel("Algorithm")
-    fig.tight_layout(rect=(0.04, 0.045, 0.997, 0.93), pad=0.5, w_pad=0.48, h_pad=0.4)
-    fig.savefig(output_path, bbox_inches="tight")
+    axes.flat[0].set_ylabel("Mean evaluation returns", fontsize=DEFAULT_AXIS_LABEL_FONTSIZE)
+    #fig.suptitle(f"{display_task_title(preset.title)} final evaluation", fontsize=12, fontweight="bold", y=0.94)
+    fig.tight_layout(rect=(0.012, 0.060, 0.997, 0.905), pad=0.45, w_pad=0.70, h_pad=0.35)
+    fig.text(0.5, 0.0, "Algorithm", ha="center", va="bottom", fontsize=DEFAULT_AXIS_LABEL_FONTSIZE)
+    fig.savefig(output_path, bbox_inches="tight", dpi=dpi)
     plt.close(fig)
     return output_path
 
@@ -568,6 +673,7 @@ def plot_preset(
     save_legend_separately: bool,
     merge_identical_adjacent_stages: bool,
     save_final_eval_boxplots: bool,
+    compact_line_y_limits: bool,
 ) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / preset.output_filename
@@ -582,7 +688,7 @@ def plot_preset(
             face_color = STAGE_FACE_COLORS[segment.stage_indices[0] % len(STAGE_FACE_COLORS)]
             axis.axvspan(segment.start_step, segment.end_step, color=face_color, alpha=stage_alpha, linewidth=0)
             if segment_index > 0:
-                axis.axvline(segment.start_step, color="#666666", linewidth=0.8, alpha=separator_alpha, linestyle="--")
+                axis.axvline(segment.start_step, color="#555555", linewidth=1.0, alpha=separator_alpha, linestyle="--")
             if show_stage_labels:
                 axis.text(
                     (segment.start_step + segment.end_step) / 2.0,
@@ -593,10 +699,11 @@ def plot_preset(
                     va="top",
                     fontsize=8,
                     color="#444444",
-                    alpha=0.80,
+                    alpha=0.88,
                 )
 
     z_value = confidence_scale(ci_level)
+    mean_curves: list[np.ndarray] = []
     for series in preset.series:
         run_paths = sorted(REPO_ROOT.glob(series.glob_pattern))
         if not run_paths:
@@ -609,19 +716,22 @@ def plot_preset(
             reset_smoothing_at_stage_boundaries=reset_smoothing_at_stage_boundaries,
         )
         band = z_value * stderr
+        mean_curves.append(mean)
         axis.plot(x_values, mean, label=series.label, color=series.color, linewidth=2.0)
         axis.fill_between(x_values, mean - band, mean + band, color=series.color, alpha=0.18)
 
-    axis.set_title(simplified_task_title(preset.title))
+    if compact_line_y_limits:
+        axis.set_ylim(*compact_y_limits_from_mean_curves(mean_curves))
+    #axis.set_title(display_task_title(preset.title))
     x_label = display_x_label(x_key)
-    axis.set_xlabel(scaled_step_xlabel(x_label) if uses_step_axis(x_key) else x_label)
-    axis.set_ylabel(y_key.replace("_", " ").title())
+    axis.set_xlabel(scaled_step_xlabel(x_label) if uses_step_axis(x_key) else x_label, fontsize=DEFAULT_AXIS_LABEL_FONTSIZE)
+    axis.set_ylabel(display_y_label(y_key), fontsize=DEFAULT_AXIS_LABEL_FONTSIZE)
     apply_step_axis_format(axis, x_key=x_key)
     axis.grid(True, alpha=0.18)
     if not save_legend_separately:
         axis.legend(frameon=False)
     fig.tight_layout()
-    fig.savefig(output_path, bbox_inches="tight")
+    fig.savefig(output_path, bbox_inches="tight", dpi=dpi)
     plt.close(fig)
 
     if save_stage_panels and stage_segments:
@@ -638,6 +748,7 @@ def plot_preset(
             relative_x=stage_panel_relative_x,
             reset_smoothing_at_stage_boundaries=reset_smoothing_at_stage_boundaries,
             save_legend_separately=save_legend_separately,
+            compact_line_y_limits=compact_line_y_limits,
         )
     if save_final_eval_boxplots:
         plot_final_eval_boxplots(
@@ -664,6 +775,7 @@ def plot_stage_panels(
     relative_x: bool,
     reset_smoothing_at_stage_boundaries: bool,
     save_legend_separately: bool,
+    compact_line_y_limits: bool,
 ) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     ncols = max(1, min(int(columns), len(stage_segments)))
@@ -671,7 +783,7 @@ def plot_stage_panels(
     fig, axes = plt.subplots(
         nrows=nrows,
         ncols=ncols,
-        figsize=(4.2 * ncols, 3.15 * nrows),
+        figsize=(4.2 * ncols, 2.5 * nrows),
         dpi=dpi,
         sharey=False,
         squeeze=False,
@@ -682,6 +794,7 @@ def plot_stage_panels(
         axis.set_visible(False)
 
     for axis, segment in zip(axes.flat, stage_segments):
+        mean_curves: list[np.ndarray] = []
         for series in preset.series:
             run_paths = sorted(REPO_ROOT.glob(series.glob_pattern))
             if not run_paths:
@@ -697,24 +810,31 @@ def plot_stage_panels(
                 relative_to=segment.start_step if relative_x else None,
             )
             band = z_value * stderr
+            mean_curves.append(mean)
             axis.plot(x_values, mean, color=series.color, linewidth=2.0, label=series.label)
             axis.fill_between(x_values, mean - band, mean + band, color=series.color, alpha=0.18)
 
+        if compact_line_y_limits:
+            axis.set_ylim(*compact_y_limits_from_mean_curves(mean_curves))
         axis.set_title(segment.label, fontsize=10, fontweight="bold")
         axis.grid(True, alpha=0.18)
-        axis.set_ylabel(y_key.replace("_", " ").title())
         apply_step_axis_format(axis, x_key=x_key)
 
-    fig.suptitle(f"{simplified_task_title(preset.title)}: by curriculum stage", fontsize=12, fontweight="bold", y=0.975)
+    #fig.suptitle(f"{display_task_title(preset.title)} by stage", fontsize=12, fontweight="bold", y=0.985)
     if not save_legend_separately:
         handles, labels = axes.flat[0].get_legend_handles_labels()
-        fig.legend(handles, labels, frameon=False, ncol=max(1, len(labels)), loc="upper center", bbox_to_anchor=(0.5, 0.945))
-        fig.tight_layout(rect=(0.01, 0.05, 0.995, 0.84), pad=0.55, w_pad=0.45, h_pad=0.75)
+        fig.legend(handles, labels, frameon=False, ncol=max(1, len(labels)), loc="upper center", bbox_to_anchor=(0.5, 0.975))
+        fig.tight_layout(rect=(0.01, 0.055, 0.995, 0.895), pad=0.55, w_pad=0.45, h_pad=0.75)
     else:
-        fig.tight_layout(rect=(0.01, 0.05, 0.995, 0.90), pad=0.55, w_pad=0.45, h_pad=0.75)
+        fig.tight_layout(rect=(0.01, 0.055, 0.995, 0.925), pad=0.55, w_pad=0.45, h_pad=0.75)
     stage_x_label = "Environment Steps Within Stage" if relative_x else display_x_label(x_key)
-    fig.supxlabel(scaled_step_xlabel(stage_x_label) if uses_step_axis(x_key) else stage_x_label)
-    fig.savefig(output_path, bbox_inches="tight")
+    fig.supylabel(display_y_label(y_key), x=0.0, fontsize=DEFAULT_AXIS_LABEL_FONTSIZE)
+    fig.supxlabel(
+        scaled_step_xlabel(stage_x_label) if uses_step_axis(x_key) else stage_x_label,
+        y=0.01,
+        fontsize=DEFAULT_AXIS_LABEL_FONTSIZE,
+    )
+    fig.savefig(output_path, bbox_inches="tight", dpi=dpi)
     plt.close(fig)
     return output_path
 
@@ -740,6 +860,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--ci-level", type=float, default=DEFAULT_CI_LEVEL, help="Confidence interval level, e.g. 0.95.")
     parser.add_argument("--dpi", type=int, default=DEFAULT_DPI, help="Figure DPI.")
+    parser.add_argument(
+        "--compact-line-y-limits",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_COMPACT_LINE_Y_LIMITS,
+        help="Use mean-curve-driven y-limits for line plots so CI bands do not over-expand the axis.",
+    )
     parser.add_argument("--show-stage-bands", action=argparse.BooleanOptionalAction, default=DEFAULT_SHOW_STAGE_BANDS)
     parser.add_argument("--show-stage-labels", action=argparse.BooleanOptionalAction, default=DEFAULT_SHOW_STAGE_LABELS)
     parser.add_argument("--stage-alpha", type=float, default=DEFAULT_STAGE_ALPHA, help="Background alpha for curriculum bands.")
@@ -815,6 +941,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             save_legend_separately=bool(args.save_legend_separately),
             merge_identical_adjacent_stages=bool(args.merge_identical_adjacent_stages),
             save_final_eval_boxplots=bool(args.save_final_eval_boxplots),
+            compact_line_y_limits=bool(args.compact_line_y_limits),
         )
         print(output_path)
         if bool(args.save_stage_panels):
