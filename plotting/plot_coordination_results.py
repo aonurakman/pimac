@@ -46,8 +46,6 @@ DEFAULT_FONT_FAMILY = "Charter"
 DEFAULT_SHOW_TITLE = False
 DEFAULT_TASK_WORKERS = 3
 
-# Main user-tunable selection table. These defaults intentionally mirror
-# plotting/plot_learning_curves.py and tables.ipynb.
 DEFAULT_TASK_MODEL_SELECTIONS: dict[str, dict[str, str]] = {
     "spread": {
         "task_id": "simple_spread_dynamic_hard",

@@ -27,9 +27,6 @@ htmlcov/
 # Run outputs
 results/*
 !results/.gitkeep
-optuna/results/*
-optuna/archive/*
-!optuna/results/.gitkeep
 
 # Optuna database files
 *.sqlite3
@@ -41,3 +38,7 @@ paper/
 archive/
 tmp/
 plotting/plots/
+plotting/single_curves/
+plotting/boxplots/
+plotting/stage_curves/
+
