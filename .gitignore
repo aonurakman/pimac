@@ -41,4 +41,6 @@ plotting/plots/
 plotting/single_curves/
 plotting/boxplots/
 plotting/stage_curves/
+plotting/coordination/
 
+optuna/

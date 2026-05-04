@@ -197,11 +197,8 @@ class RwareParallelAdapter:
 
 def make_env(task_config: dict, seed: int, n_agents: int, render_mode: str | None = None):
     """Build one dynamic-team RWARE environment instance."""
-    try:
-        import gymnasium as gym
-        from rware.warehouse import RewardType
-    except Exception as exc:  # pragma: no cover
-        raise ImportError("RWARE is required. Install `rware==2.0.0`.") from exc
+    import gymnasium as gym
+    from rware.warehouse import RewardType
 
     reward_type_name = str(task_config["reward_type"]).lower()
     reward_type_map = {
