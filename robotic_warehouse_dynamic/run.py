@@ -136,7 +136,11 @@ def _render_frame(warehouse_env) -> np.ndarray:
 
 
 class RwareParallelAdapter:
-    """Thin dict-based adapter around the tuple/list RWARE Gymnasium API."""
+    """
+    Adapter to convert RWARE's Gymnasium API to the dict-based API expected by our learners, 
+    and to provide custom rendering of the warehouse state.
+    """
+    
 
     def __init__(self, env):
         self.env = env
@@ -206,6 +210,7 @@ def make_env(task_config: dict, seed: int, n_agents: int, render_mode: str | Non
         "individual": RewardType.INDIVIDUAL,
         "two_stage": RewardType.TWO_STAGE,
     }
+    
     if reward_type_name not in reward_type_map:
         raise ValueError(f"Unsupported reward_type: {task_config['reward_type']!r}")
 
@@ -243,7 +248,7 @@ def prepare_observation(raw_obs: np.ndarray, env_spec: ParallelEnvSpec) -> np.nd
     """Convert one raw environment observation into the learner input for this task."""
     return pad_vector(np.asarray(raw_obs, dtype=np.float32), env_spec.obs_size)
 
-
+# YOU ARE HERE!
 # -----------------------------------------------------------------------------
 # Experiment loop
 # -----------------------------------------------------------------------------

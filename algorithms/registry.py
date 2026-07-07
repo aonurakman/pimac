@@ -9,6 +9,7 @@ from __future__ import annotations
 from algorithms.ippo import IPPO
 from algorithms.iql import IQL
 from algorithms.mappo import MAPPO
+from algorithms.mipi import MIPI
 from algorithms.pimac_v0 import PIMACV0
 from algorithms.pimac_v1 import PIMACV1
 from algorithms.pimac_v2 import PIMACV2
@@ -28,6 +29,7 @@ ALGORITHM_REGISTRY = {
     "iql": IQL,
     "ippo": IPPO,
     "mappo": MAPPO,
+    "mipi": MIPI,
     "qmix": QMIX,
     "vdn": VDN,
     "pimac_v0": PIMACV0,
@@ -46,6 +48,7 @@ ALGORITHM_ORDER = (
     "iql",
     "ippo",
     "mappo",
+    "mipi",
     "qmix",
     "vdn",
     "pimac_v0",
