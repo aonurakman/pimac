@@ -4,7 +4,7 @@ optuna>=3.6.1
 Pillow>=10.0.0
 pygame>=2.6.1
 gymnasium>=0.29.1
-pettingzoo[mpe]>=1.24.3
+pettingzoo[mpe]==1.25.0
 rware==2.0.0
 lbforaging==2.0.0
 pytest>=8.0.0
