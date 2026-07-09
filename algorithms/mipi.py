@@ -53,6 +53,7 @@ MIPI_DEFAULT_CONFIG = {
     "attn_n_heads": 4,
     "mixing_embed_dim": 32,
     "hypernet_embed": 128,
+    "mixer_chunk_size": 1024,
     "max_grad_norm": 10.0,
     "gamma": 0.99,
     "target_update_every": 200,
@@ -448,34 +449,85 @@ class FlexQMixer(nn.Module):
         mixing_embed_dim: int,
         hypernet_embed: int,
         attn_n_heads: int,
+        chunk_size: int = 1024,
     ):
         super().__init__()
         self.num_agents = int(num_agents)
         self.embed_dim = int(mixing_embed_dim)
+        self.chunk_size = max(1, int(chunk_size))
         self.hyper_w_1 = AttentionHyperNet(entity_dim, hypernet_embed, mixing_embed_dim, attn_n_heads, "matrix")
         self.hyper_w_final = AttentionHyperNet(entity_dim, hypernet_embed, mixing_embed_dim, attn_n_heads, "vector")
         self.hyper_b_1 = AttentionHyperNet(entity_dim, hypernet_embed, mixing_embed_dim, attn_n_heads, "vector")
         self.V = AttentionHyperNet(entity_dim, hypernet_embed, mixing_embed_dim, attn_n_heads, "scalar")
+
+    def _chunk_ranges(self, total_rows: int):
+        for start in range(0, int(total_rows), self.chunk_size):
+            yield start, min(start + self.chunk_size, int(total_rows))
+
+    def _forward_flat_chunk(
+        self,
+        flat_qs: torch.Tensor,
+        flat_entities: torch.Tensor,
+        flat_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        num_rows = flat_entities.shape[0]
+        w1 = self.hyper_w_1(flat_entities, flat_mask, num_agents=self.num_agents)
+        b1 = self.hyper_b_1(flat_entities, flat_mask, num_agents=self.num_agents)
+        w_final = self.hyper_w_final(flat_entities, flat_mask, num_agents=self.num_agents)
+        v = self.V(flat_entities, flat_mask, num_agents=self.num_agents)
+
+        w1 = F.softmax(w1.reshape(num_rows, self.num_agents, self.embed_dim), dim=-1)
+        b1 = b1.reshape(num_rows, 1, self.embed_dim)
+        w_final = F.softmax(w_final.reshape(num_rows, self.embed_dim, 1), dim=-2)
+        v = v.reshape(num_rows, 1, 1)
+
+        hidden = torch.bmm(flat_qs, w1) + b1
+        return (torch.bmm(hidden, w_final) + v).reshape(num_rows)
 
     def forward(self, agent_qs: torch.Tensor, entities: torch.Tensor, entity_mask: torch.Tensor) -> torch.Tensor:
         batch_size, num_timesteps, num_entities, entity_dim = entities.shape
         flat_entities = entities.reshape(batch_size * num_timesteps, num_entities, entity_dim)
         flat_mask = entity_mask.reshape(batch_size * num_timesteps, num_entities)
         flat_qs = agent_qs.reshape(batch_size * num_timesteps, 1, self.num_agents)
+        chunks = [
+            self._forward_flat_chunk(flat_qs[start:end], flat_entities[start:end], flat_mask[start:end])
+            for start, end in self._chunk_ranges(flat_entities.shape[0])
+        ]
+        return torch.cat(chunks, dim=0).reshape(batch_size, num_timesteps)
 
-        w1 = self.hyper_w_1(flat_entities, flat_mask, num_agents=self.num_agents)
+    def _forward_img_flat_chunk(
+        self,
+        flat_qs: torch.Tensor,
+        flat_entities: torch.Tensor,
+        flat_mask: torch.Tensor,
+        within_mask: torch.Tensor,
+        interact_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        num_rows = flat_entities.shape[0]
+        w1_within = self.hyper_w_1(
+            flat_entities,
+            flat_mask,
+            num_agents=self.num_agents,
+            attn_mask=within_mask,
+        )
+        w1_interact = self.hyper_w_1(
+            flat_entities,
+            flat_mask,
+            num_agents=self.num_agents,
+            attn_mask=interact_mask,
+        )
+        w1 = torch.cat([w1_within, w1_interact], dim=1)
         b1 = self.hyper_b_1(flat_entities, flat_mask, num_agents=self.num_agents)
         w_final = self.hyper_w_final(flat_entities, flat_mask, num_agents=self.num_agents)
         v = self.V(flat_entities, flat_mask, num_agents=self.num_agents)
 
-        w1 = F.softmax(w1.reshape(batch_size * num_timesteps, self.num_agents, self.embed_dim), dim=-1)
-        b1 = b1.reshape(batch_size * num_timesteps, 1, self.embed_dim)
-        w_final = F.softmax(w_final.reshape(batch_size * num_timesteps, self.embed_dim, 1), dim=-2)
-        v = v.reshape(batch_size * num_timesteps, 1, 1)
+        w1 = F.softmax(w1.reshape(num_rows, self.num_agents * 2, self.embed_dim), dim=-1)
+        b1 = b1.reshape(num_rows, 1, self.embed_dim)
+        w_final = F.softmax(w_final.reshape(num_rows, self.embed_dim, 1), dim=-2)
+        v = v.reshape(num_rows, 1, 1)
 
         hidden = torch.bmm(flat_qs, w1) + b1
-        q_tot = torch.bmm(hidden, w_final) + v
-        return q_tot.reshape(batch_size, num_timesteps)
+        return (torch.bmm(hidden, w_final) + v).reshape(num_rows)
 
     def forward_img(
         self,
@@ -489,24 +541,22 @@ class FlexQMixer(nn.Module):
         flat_mask = entity_mask.reshape(batch_size * num_timesteps, num_entities)
         flat_qs = agent_qs.reshape(batch_size * num_timesteps, 1, self.num_agents * 2)
         within_mask, interact_mask = imagine_groups
-        within_mask = within_mask.reshape(batch_size * num_timesteps, num_entities, num_entities)
-        interact_mask = interact_mask.reshape(batch_size * num_timesteps, num_entities, num_entities)
-
-        w1_within = self.hyper_w_1(flat_entities, flat_mask, num_agents=self.num_agents, attn_mask=within_mask)
-        w1_interact = self.hyper_w_1(flat_entities, flat_mask, num_agents=self.num_agents, attn_mask=interact_mask)
-        w1 = torch.cat([w1_within, w1_interact], dim=1)
-        b1 = self.hyper_b_1(flat_entities, flat_mask, num_agents=self.num_agents)
-        w_final = self.hyper_w_final(flat_entities, flat_mask, num_agents=self.num_agents)
-        v = self.V(flat_entities, flat_mask, num_agents=self.num_agents)
-
-        w1 = F.softmax(w1.reshape(batch_size * num_timesteps, self.num_agents * 2, self.embed_dim), dim=-1)
-        b1 = b1.reshape(batch_size * num_timesteps, 1, self.embed_dim)
-        w_final = F.softmax(w_final.reshape(batch_size * num_timesteps, self.embed_dim, 1), dim=-2)
-        v = v.reshape(batch_size * num_timesteps, 1, 1)
-
-        hidden = torch.bmm(flat_qs, w1) + b1
-        q_tot = torch.bmm(hidden, w_final) + v
-        return q_tot.reshape(batch_size, num_timesteps)
+        row_indices = torch.arange(batch_size * num_timesteps, device=entities.device)
+        chunks = []
+        for start, end in self._chunk_ranges(flat_entities.shape[0]):
+            chunk_rows = row_indices[start:end]
+            batch_indices = torch.div(chunk_rows, num_timesteps, rounding_mode="floor")
+            time_indices = chunk_rows.remainder(num_timesteps)
+            chunks.append(
+                self._forward_img_flat_chunk(
+                    flat_qs[start:end],
+                    flat_entities[start:end],
+                    flat_mask[start:end],
+                    within_mask[batch_indices, time_indices],
+                    interact_mask[batch_indices, time_indices],
+                )
+            )
+        return torch.cat(chunks, dim=0).reshape(batch_size, num_timesteps)
 
 
 class MIPI(ParallelLearner):
@@ -568,6 +618,7 @@ class MIPI(ParallelLearner):
             mixing_embed_dim=int(config["mixing_embed_dim"]),
             hypernet_embed=int(config["hypernet_embed"]),
             attn_n_heads=int(config["attn_n_heads"]),
+            chunk_size=int(config["mixer_chunk_size"]),
         ).to(self.device)
         self.target_mixing_net = copy.deepcopy(self.mixing_net).to(self.device)
         self.target_mixing_net.eval()

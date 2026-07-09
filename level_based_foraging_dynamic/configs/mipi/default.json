@@ -60,6 +60,7 @@
   "mi_alpha_end": 0.1,
   "mi_alpha_start": 0.1,
   "mixing_embed_dim": 64,
+  "mixer_chunk_size": 1024,
   "num_epochs": 1,
   "optim_alpha": 0.99,
   "optim_eps": 0.00001,
