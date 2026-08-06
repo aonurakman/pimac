@@ -1,0 +1,34 @@
+{
+  "batch_size": 128,
+  "buffer_size": 200000,
+  "double_q": false,
+  "gamma": 0.995,
+  "hypernet_embed": 256,
+  "learn_every_steps": 16,
+  "learning_starts": 2000,
+  "lr": 0.0002365550177813243,
+  "max_grad_norm": 20.0,
+  "mixing_embed_dim": 64,
+  "mixing_num_hidden": 2,
+  "mixing_weight_clip": 5.0,
+  "mixing_widths": [
+    128,
+    128
+  ],
+  "num_epochs": 4,
+  "num_hidden": 2,
+  "q_tot_clip": 20.0,
+  "rnn_hidden_dim": 64,
+  "share_parameters": true,
+  "target_update_every": 200,
+  "tau": 1.0,
+  "temp_decay": 0.9998117461570221,
+  "temp_init": 1.0,
+  "temp_min": 0.05,
+  "use_huber_loss": false,
+  "widths": [
+    128,
+    128,
+    128
+  ]
+}

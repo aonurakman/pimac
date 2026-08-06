@@ -19,6 +19,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.utils.checkpoint import checkpoint
 
 from algorithms.base import (
     ParallelEnvSpec,
@@ -53,7 +54,7 @@ MIPI_DEFAULT_CONFIG = {
     "attn_n_heads": 4,
     "mixing_embed_dim": 32,
     "hypernet_embed": 128,
-    "mixer_chunk_size": 1024,
+    "mixer_chunk_size": 128,
     "max_grad_norm": 10.0,
     "gamma": 0.99,
     "target_update_every": 200,
@@ -61,6 +62,7 @@ MIPI_DEFAULT_CONFIG = {
     "share_parameters": True,
     "learning_starts": 0,
     "learn_every_steps": 1,
+    "update_seq_len": 0,
     "entity_schema": None,
     "mi_alpha_start": 0.1,
     "mi_alpha_end": 0.1,
@@ -449,7 +451,7 @@ class FlexQMixer(nn.Module):
         mixing_embed_dim: int,
         hypernet_embed: int,
         attn_n_heads: int,
-        chunk_size: int = 1024,
+        chunk_size: int = 128,
     ):
         super().__init__()
         self.num_agents = int(num_agents)
@@ -463,6 +465,12 @@ class FlexQMixer(nn.Module):
     def _chunk_ranges(self, total_rows: int):
         for start in range(0, int(total_rows), self.chunk_size):
             yield start, min(start + self.chunk_size, int(total_rows))
+
+    def _maybe_checkpoint(self, function, *args: torch.Tensor) -> torch.Tensor:
+        has_grad_input = any(torch.is_tensor(arg) and arg.requires_grad for arg in args)
+        if self.training and torch.is_grad_enabled() and has_grad_input:
+            return checkpoint(function, *args, use_reentrant=False)
+        return function(*args)
 
     def _forward_flat_chunk(
         self,
@@ -490,7 +498,12 @@ class FlexQMixer(nn.Module):
         flat_mask = entity_mask.reshape(batch_size * num_timesteps, num_entities)
         flat_qs = agent_qs.reshape(batch_size * num_timesteps, 1, self.num_agents)
         chunks = [
-            self._forward_flat_chunk(flat_qs[start:end], flat_entities[start:end], flat_mask[start:end])
+            self._maybe_checkpoint(
+                self._forward_flat_chunk,
+                flat_qs[start:end],
+                flat_entities[start:end],
+                flat_mask[start:end],
+            )
             for start, end in self._chunk_ranges(flat_entities.shape[0])
         ]
         return torch.cat(chunks, dim=0).reshape(batch_size, num_timesteps)
@@ -548,7 +561,8 @@ class FlexQMixer(nn.Module):
             batch_indices = torch.div(chunk_rows, num_timesteps, rounding_mode="floor")
             time_indices = chunk_rows.remainder(num_timesteps)
             chunks.append(
-                self._forward_img_flat_chunk(
+                self._maybe_checkpoint(
+                    self._forward_img_flat_chunk,
                     flat_qs[start:end],
                     flat_entities[start:end],
                     flat_mask[start:end],
@@ -581,6 +595,7 @@ class MIPI(ParallelLearner):
         self.max_grad_norm = float(config["max_grad_norm"]) if config["max_grad_norm"] is not None else None
         self.learning_starts = int(config["learning_starts"])
         self.learn_every_steps = int(config["learn_every_steps"])
+        self.update_seq_len = max(0, int(config["update_seq_len"]))
         self.ba_iters = max(1, int(config["ba_iters"]))
         self.lmbda = float(config["lmbda"])
         if not 0.0 <= self.lmbda <= 1.0:
@@ -998,6 +1013,8 @@ class MIPI(ParallelLearner):
         return self._append_update_report(report)
 
     def _batch_to_tensors(self, batch: list[dict]) -> tuple[torch.Tensor, ...]:
+        if self.update_seq_len > 0:
+            batch = [self._sample_update_window(episode) for episode in batch]
         max_t = max(int(episode["T"]) for episode in batch)
 
         def pad_time(array, pad_value=0.0):
@@ -1022,6 +1039,24 @@ class MIPI(ParallelLearner):
         lengths = torch.tensor([int(ep["T"]) for ep in batch], device=self.device, dtype=torch.int64)
         time_mask = (torch.arange(max_t, device=self.device).unsqueeze(0) < lengths.unsqueeze(1)).to(torch.float32)
         return obs, actions, rewards, active_mask, next_obs, next_active_mask, dones, time_mask
+
+    def _sample_update_window(self, episode: dict) -> dict:
+        episode_len = int(episode["T"])
+        window_len = min(int(self.update_seq_len), episode_len)
+        if window_len >= episode_len:
+            return episode
+        start = random.randint(0, episode_len - window_len)
+        end = start + window_len
+        return {
+            "obs": episode["obs"][start:end],
+            "actions": episode["actions"][start:end],
+            "rewards": episode["rewards"][start:end],
+            "active_mask": episode["active_mask"][start:end],
+            "next_obs": episode["next_obs"][start:end],
+            "next_active_mask": episode["next_active_mask"][start:end],
+            "done": episode["done"][start:end],
+            "T": int(window_len),
+        }
 
     def _update_critic(
         self,

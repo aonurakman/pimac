@@ -1,7 +1,7 @@
 {
-  "attn_embed_dim": 128,
+  "attn_embed_dim": 64,
   "attn_n_heads": 4,
-  "ba_iters": 4,
+  "ba_iters": 2,
   "batch_size": 64,
   "buffer_size": 200000,
   "entity_schema": {
@@ -11,34 +11,40 @@
         "count": 1,
         "name": "self",
         "slice": [
-          12,
-          15
+          0,
+          1
         ],
         "type": "self",
-        "width": 3
+        "width": 1
       },
       {
-        "active_feature_index": 2,
-        "active_rule": "feature_positive",
-        "active_threshold": 0.0,
+        "active_rule": "not_sentinel",
         "count": 4,
+        "inactive_values": [
+          -3.0,
+          -3.0,
+          0.0
+        ],
         "name": "food",
         "slice": [
-          0,
-          12
+          1,
+          13
         ],
         "type": "food",
         "width": 3
       },
       {
-        "active_feature_index": 2,
-        "active_rule": "feature_positive",
-        "active_threshold": 0.0,
-        "count": 4,
+        "active_rule": "not_sentinel",
+        "count": 7,
+        "inactive_values": [
+          -3.0,
+          -3.0,
+          0.0
+        ],
         "name": "teammates",
         "slice": [
-          15,
-          27
+          13,
+          34
         ],
         "team_related": true,
         "type": "teammate",
@@ -46,28 +52,28 @@
       }
     ]
   },
-  "epsilon_anneal_steps": 500000,
-  "epsilon_finish": 0.05,
+  "epsilon_anneal_steps": 1000000,
+  "epsilon_finish": 0.2,
   "epsilon_start": 1.0,
-  "gamma": 0.99,
+  "gamma": 0.985,
   "hypernet_embed": 128,
-  "lmbda": 0.5,
-  "learn_every_steps": 8,
+  "learn_every_steps": 64,
   "learning_starts": 2000,
-  "lr": 0.0001,
-  "max_grad_norm": 5.0,
-  "mi_alpha_anneal_steps": 200000,
+  "lmbda": 0.75,
+  "lr": 0.0003812758262415949,
+  "max_grad_norm": 20.0,
+  "mi_alpha_anneal_steps": 500000,
   "mi_alpha_end": 0.1,
-  "mi_alpha_start": 0.1,
-  "mixing_embed_dim": 64,
+  "mi_alpha_start": 0.03,
   "mixer_chunk_size": 128,
+  "mixing_embed_dim": 32,
   "num_epochs": 1,
   "optim_alpha": 0.99,
-  "optim_eps": 0.00001,
+  "optim_eps": 1e-05,
   "rnn_hidden_dim": 64,
   "share_parameters": true,
-  "target_update_every": 200,
-  "tau": 1.0,
+  "target_update_every": 100,
+  "tau": 0.25,
   "test_greedy": true,
   "weight_decay": 0.0
 }

@@ -139,8 +139,8 @@ class RwareParallelAdapter:
     """
     Adapter to convert RWARE's Gymnasium API to the dict-based API expected by our learners, 
     and to provide custom rendering of the warehouse state.
+    RwareParallelAdapter class simplifies the interaction between the RWARE environment and our learners by providing a clean interface for handling observations, actions, rewards, and other information in a multi-agent setting, while also offering a custom rendering method for visualizing the warehouse state.
     """
-    
 
     def __init__(self, env):
         self.env = env
@@ -248,7 +248,7 @@ def prepare_observation(raw_obs: np.ndarray, env_spec: ParallelEnvSpec) -> np.nd
     """Convert one raw environment observation into the learner input for this task."""
     return pad_vector(np.asarray(raw_obs, dtype=np.float32), env_spec.obs_size)
 
-# YOU ARE HERE!
+
 # -----------------------------------------------------------------------------
 # Experiment loop
 # -----------------------------------------------------------------------------
@@ -265,7 +265,10 @@ def run_task(
     skip_gif: bool = False,
     device: str = "auto",
 ) -> str:
-    """Train one learner on the dynamic task and write the standard outputs."""
+    """
+    Train one learner on the dynamic task and write the standard outputs.
+    Usage: run_task(algorithm="pimac_v6", alg_config_path="configs/pimac_v6.json", task_config_path="configs/task.json", seed=42, results_root="results", run_id="run_001", skip_gif=False, device="auto")
+    """
     task_path = TASK_DIR / "task.json" if task_config_path is None else resolve_json_path(task_config_path, base_dir=TASK_DIR, project_root=PROJECT_ROOT)
     alg_path = resolve_json_path(alg_config_path, base_dir=TASK_DIR, project_root=PROJECT_ROOT)
     task_config = load_json(task_path)
