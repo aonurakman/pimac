@@ -279,6 +279,7 @@ def run_task(
     env_spec = build_env_spec(task_config, seed)
     learner_cls = get_algorithm_class(algorithm)
     learner = learner_cls(env_spec=env_spec, config=learner_config, device=resolve_device(device))
+    qmix_timeout_bootstrap = algorithm == "qmix"
 
     out_dir = Path(make_run_dir(str(task_config["task_name"]), algorithm, results_root=results_root, run_id=run_id))
     best_ckpt_path = out_dir / "best_checkpoint.pt"
@@ -330,7 +331,15 @@ def run_task(
                     agent_id: bool(terminations.get(agent_id, False) or truncations.get(agent_id, False))
                     for agent_id in agent_ids
                 }
-                next_active = [agent_id for agent_id in agent_ids if not done_dict[agent_id] and agent_id in next_obs]
+                next_active = [
+                    agent_id
+                    for agent_id in agent_ids
+                    if agent_id in next_obs
+                    and (
+                        not done_dict[agent_id]
+                        or (qmix_timeout_bootstrap and truncations.get(agent_id, False))
+                    )
+                ]
                 transition = ParallelTransition(
                     obs_dict=obs_dict,
                     action_dict=actions,
@@ -340,6 +349,7 @@ def run_task(
                         for agent_id in next_active
                     },
                     done_dict=done_dict,
+                    truncated_dict=truncations if qmix_timeout_bootstrap else None,
                     active_agent_mask_dict=active_agent_mask(agent_ids, current_active),
                     next_active_agent_mask_dict=active_agent_mask(agent_ids, next_active),
                 )

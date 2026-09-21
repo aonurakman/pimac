@@ -41,7 +41,7 @@ import matplotlib.pyplot as plt
 DASHBOARD_METRIC_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Policy optimization", ("policy_loss", "value_loss", "entropy")),
     ("PPO stability", ("approx_kl", "clip_frac", "explained_variance")),
-    ("Q-learning", ("td_loss", "td_error_abs", "exploration_temperature")),
+    ("Q-learning", ("td_loss", "td_error_abs", "epsilon", "exploration_temperature")),
     ("Q scale", ("q_mean", "target_mean")),
     ("Teacher grounding", ("distill_loss", "distill_mse", "counterfactual_loss")),
     ("Context uncertainty", ("ctx_logvar_mean", "ctx_logvar_std", "gate_mean", "gate_std")),

@@ -43,6 +43,10 @@ class ParallelEnvSpec:
 class ParallelTransition:
     """One full parallel-environment step.
 
+    `done_dict` marks episode boundaries, including time-limit truncations.
+    `truncated_dict`, when provided, distinguishes those time limits so learners can
+    close the episode while retaining a bootstrap target from the final observation.
+
     `active_agent_mask_dict` marks which known agents are present in the current step.
     `next_active_agent_mask_dict` does the same for the next-step roster.
     These are team-membership masks for padded joint tensors, not legal-action masks.
@@ -57,6 +61,7 @@ class ParallelTransition:
     next_active_agent_mask_dict: Optional[dict[object, Any]] = None
     global_state: Optional[Any] = None
     next_global_state: Optional[Any] = None
+    truncated_dict: Optional[dict[object, bool]] = None
 
 
 @dataclass(frozen=True)
