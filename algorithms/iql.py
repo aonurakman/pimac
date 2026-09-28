@@ -17,6 +17,8 @@ from algorithms.base import (
     ParallelLearner,
     ParallelTransition,
     UpdateReport,
+    coerce_action_mask,
+    mask_unavailable_values,
     normalize_config,
     resolve_agent_done,
 )
@@ -95,6 +97,8 @@ class RecurrentNetwork(nn.Module):
 
 class IQL(ParallelLearner):
     """Independent recurrent Q-learning with shared parameters."""
+
+    supports_legal_action_masks = True
 
     # -------------------------------------------------------------------------
     # Config normalization
@@ -189,7 +193,9 @@ class IQL(ParallelLearner):
     def _set_hidden_state(self, agent_id: object, hidden_state: torch.Tensor) -> None:
         self._inference_hidden[agent_id] = hidden_state.detach()
 
-    def _boltzmann_action(self, q_values: torch.Tensor) -> int:
+    def _boltzmann_action(self, q_values: torch.Tensor, action_mask=None) -> int:
+        if action_mask is not None:
+            q_values = mask_unavailable_values(q_values, action_mask)
         if self._eval_mode:
             return int(torch.argmax(q_values).item())
         temp = float(self.temperature)
@@ -200,24 +206,42 @@ class IQL(ParallelLearner):
         distribution = torch.distributions.Categorical(logits=logits)
         return int(distribution.sample().item())
 
-    def _act_one(self, agent_id: object, obs: np.ndarray) -> int:
+    def _act_one(self, agent_id: object, obs: np.ndarray, action_mask=None) -> int:
         obs_array = self._coerce_obs(obs)
         with torch.no_grad():
             obs_tensor = torch.as_tensor(obs_array, dtype=torch.float32, device=self.device).view(1, 1, -1)
             q_values_seq, next_hidden_state = self.q_network(obs_tensor, self._get_hidden_state(agent_id))
             self._set_hidden_state(agent_id, next_hidden_state)
             q_values = q_values_seq[:, -1, :].squeeze(0).squeeze(0)
-        action = self._boltzmann_action(q_values)
+        legal_actions = None
+        if action_mask is not None:
+            legal_actions = coerce_action_mask(
+                action_mask,
+                self.action_space_size,
+                label=f"action mask for {agent_id}",
+            )
+        action = (
+            self._boltzmann_action(q_values)
+            if legal_actions is None
+            else self._boltzmann_action(q_values, legal_actions)
+        )
         self._pending_step[agent_id] = (obs_array, int(action))
         return int(action)
 
     def act(self, state: np.ndarray, agent_index: object = 0) -> int:
         return self._act_one(agent_index, state)
 
-    def act_parallel(self, obs_dict: dict[object, np.ndarray]) -> dict[object, int]:
+    def act_parallel(self, obs_dict: dict[object, np.ndarray], action_mask_dict=None) -> dict[object, int]:
         actions: dict[object, int] = {}
         for agent_id in _sorted_agent_ids(obs_dict.keys()):
-            actions[agent_id] = self._act_one(agent_id, obs_dict[agent_id])
+            if action_mask_dict is None:
+                actions[agent_id] = self._act_one(agent_id, obs_dict[agent_id])
+            else:
+                actions[agent_id] = self._act_one(
+                    agent_id,
+                    obs_dict[agent_id],
+                    action_mask_dict[agent_id],
+                )
         return actions
 
     # -------------------------------------------------------------------------
@@ -233,9 +257,19 @@ class IQL(ParallelLearner):
                 if next_obs_raw is None
                 else self._coerce_obs(next_obs_raw)
             )
-            done = resolve_agent_done(transition.done_dict, agent_id)
-            self._agent_episode_steps[agent_id].append((state, action, reward, next_obs, done))
-            if done:
+            episode_boundary = resolve_agent_done(transition.done_dict, agent_id)
+            done = episode_boundary and not resolve_agent_done(transition.truncated_dict, agent_id)
+            if transition.next_action_mask_dict is None:
+                replay_step = (state, action, reward, next_obs, done)
+            else:
+                next_action_mask = coerce_action_mask(
+                    transition.next_action_mask_dict[agent_id],
+                    self.action_space_size,
+                    label=f"next action mask for {agent_id}",
+                )
+                replay_step = (state, action, reward, next_obs, done, next_action_mask)
+            self._agent_episode_steps[agent_id].append(replay_step)
+            if episode_boundary:
                 self.memory.append(list(self._agent_episode_steps[agent_id]))
                 self._agent_episode_steps[agent_id] = []
                 self._inference_hidden.pop(agent_id, None)
@@ -295,15 +329,23 @@ class IQL(ParallelLearner):
             rewards = np.zeros((batch_size, max_num_timesteps), dtype=np.float32)
             dones = np.ones((batch_size, max_num_timesteps), dtype=np.float32)
             time_mask = np.zeros((batch_size, max_num_timesteps), dtype=np.float32)
+            use_action_masks = any(len(step) == 6 for chunk in chunks for step in chunk)
+            next_action_masks = np.ones(
+                (batch_size, max_num_timesteps, self.action_space_size),
+                dtype=np.bool_,
+            )
 
             for batch_index, chunk in enumerate(chunks):
-                for timestep_index, (state, action, reward, next_state, done) in enumerate(chunk):
+                for timestep_index, replay_step in enumerate(chunk):
+                    state, action, reward, next_state, done = replay_step[:5]
                     obs[batch_index, timestep_index] = state
                     next_obs[batch_index, timestep_index] = next_state
                     actions[batch_index, timestep_index] = int(action)
                     rewards[batch_index, timestep_index] = float(reward)
                     dones[batch_index, timestep_index] = 1.0 if bool(done) else 0.0
                     time_mask[batch_index, timestep_index] = 1.0
+                    if len(replay_step) == 6:
+                        next_action_masks[batch_index, timestep_index] = replay_step[5]
 
             obs_tensor = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
             next_obs_tensor = torch.as_tensor(next_obs, dtype=torch.float32, device=self.device)
@@ -319,6 +361,14 @@ class IQL(ParallelLearner):
             with torch.no_grad():
                 next_q_online, _ = self.q_network(next_obs_tensor, None)
                 next_q_target, _ = self.target_q_network(next_obs_tensor, None)
+                if use_action_masks:
+                    next_action_mask_tensor = torch.as_tensor(
+                        next_action_masks,
+                        dtype=torch.bool,
+                        device=self.device,
+                    )
+                    next_q_online = mask_unavailable_values(next_q_online, next_action_mask_tensor)
+                    next_q_target = mask_unavailable_values(next_q_target, next_action_mask_tensor)
                 if self.double_dqn:
                     next_actions = torch.argmax(next_q_online, dim=2, keepdim=True)
                     next_q = torch.gather(next_q_target, dim=2, index=next_actions).squeeze(-1)

@@ -26,6 +26,8 @@ from algorithms.base import (
     ParallelLearner,
     ParallelTransition,
     UpdateReport,
+    coerce_action_mask,
+    mask_unavailable_values,
     normalize_config,
     resolve_parallel_done,
 )
@@ -237,6 +239,8 @@ class MAPPO(ParallelLearner):
     - Team-level GAE, PPO updates, diagnostics, and mode switching.
     """
 
+    supports_legal_action_masks = True
+
     @staticmethod
     def normalize_config(config: dict) -> dict:
         return normalize_config(config, MAPPO_DEFAULT_CONFIG)
@@ -303,7 +307,7 @@ class MAPPO(ParallelLearner):
         """Persist detached recurrent state after one forward pass."""
         self._inference_hidden[agent_key] = hidden_state.detach()
 
-    def _act_single(self, state: np.ndarray, actor_key: object) -> int:
+    def _act_single(self, state: np.ndarray, actor_key: object, action_mask=None) -> int:
         """Shared single-agent action path reused by the public parallel helpers."""
         observation_tensor = torch.as_tensor(state, dtype=torch.float32, device=self.device).view(1, 1, -1)
         hidden_dim = self.actor_net.rnn.hidden_size
@@ -312,6 +316,8 @@ class MAPPO(ParallelLearner):
         self._set_hidden_state(actor_key, updated_hidden_state)
 
         action_logits = action_logits_sequence.squeeze(0).squeeze(0)
+        if action_mask is not None:
+            action_logits = mask_unavailable_values(action_logits, action_mask)
         categorical_distribution = torch.distributions.Categorical(logits=action_logits)
         return int(categorical_distribution.sample().item())
 
@@ -334,6 +340,8 @@ class MAPPO(ParallelLearner):
         next_global_state,
         done,
         agent_ids: Optional[Sequence[object]],
+        decision_mask=None,
+        action_masks=None,
     ) -> dict:
         """
         Normalize one transition into the internal replay format.
@@ -408,7 +416,7 @@ class MAPPO(ParallelLearner):
             if next_active_mask_array.ndim == 0:
                 next_active_mask_array = next_active_mask_array.reshape(1)
 
-        return {
+        step = {
             "agent_ids": list(agent_ids),
             "obs": observation_array,
             "actions": action_array,
@@ -421,6 +429,36 @@ class MAPPO(ParallelLearner):
             "done": bool(done),
             "next_agent_ids": list(next_agent_ids),
         }
+        if decision_mask is not None:
+            if isinstance(decision_mask, dict):
+                decision_mask_array = np.asarray(
+                    [decision_mask.get(agent_id, 0.0) for agent_id in agent_ids],
+                    dtype=np.float32,
+                )
+            else:
+                decision_mask_array = np.asarray(decision_mask, dtype=np.float32).reshape(-1)
+            step["decision_mask"] = decision_mask_array
+        if action_masks is not None:
+            if isinstance(action_masks, dict):
+                action_mask_array = np.stack(
+                    [
+                        coerce_action_mask(
+                            action_masks[agent_id],
+                            self.action_space_size,
+                            label=f"action mask for {agent_id}",
+                        )
+                        for agent_id in agent_ids
+                    ],
+                    axis=0,
+                )
+            else:
+                action_mask_array = np.asarray(action_masks, dtype=np.bool_)
+                if action_mask_array.ndim == 1:
+                    action_mask_array = action_mask_array.reshape(1, -1)
+                for row_index, row in enumerate(action_mask_array):
+                    coerce_action_mask(row, self.action_space_size, label=f"action mask row {row_index}")
+            step["action_masks"] = action_mask_array
+        return step
 
     def store_transition(
         self,
@@ -434,6 +472,9 @@ class MAPPO(ParallelLearner):
         next_global_state: Optional[np.ndarray],
         done: bool,
         agent_ids: Optional[Sequence[object]] = None,
+        decision_mask=None,
+        action_masks=None,
+        episode_finished: Optional[bool] = None,
     ) -> None:
         """Append one transition and finalize the episode when `done=True`."""
         self._episode_steps.append(
@@ -448,10 +489,14 @@ class MAPPO(ParallelLearner):
                 next_global_state,
                 done,
                 agent_ids,
+                decision_mask,
+                action_masks,
             )
         )
 
-        if done:
+        if episode_finished is None:
+            episode_finished = bool(done)
+        if episode_finished:
             finalized_episode = self._finalize_episode(self._episode_steps)
             self.memory.append(finalized_episode)
             self._episode_steps = []
@@ -494,6 +539,8 @@ class MAPPO(ParallelLearner):
         obs: np.ndarray,
         actions: np.ndarray,
         active_mask: np.ndarray,
+        action_masks: Optional[np.ndarray] = None,
+        decision_mask: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         """Compute behavior-policy log-probs stored with finalized episodes."""
         observation_tensor = torch.as_tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0)
@@ -502,8 +549,24 @@ class MAPPO(ParallelLearner):
 
         with torch.no_grad():
             action_logits = self._actor_forward(observation_tensor)
+            if action_masks is not None:
+                action_mask_tensor = torch.as_tensor(
+                    action_masks,
+                    dtype=torch.bool,
+                    device=self.device,
+                ).unsqueeze(0)
+                action_logits = mask_unavailable_values(action_logits, action_mask_tensor)
             categorical_distribution = torch.distributions.Categorical(logits=action_logits)
-            old_log_probabilities = categorical_distribution.log_prob(action_tensor) * active_mask_tensor
+            old_log_probabilities = categorical_distribution.log_prob(action_tensor)
+            if decision_mask is None:
+                old_log_probabilities = old_log_probabilities * active_mask_tensor
+            else:
+                decision_mask_tensor = torch.as_tensor(
+                    decision_mask,
+                    dtype=torch.float32,
+                    device=self.device,
+                ).unsqueeze(0)
+                old_log_probabilities = old_log_probabilities * decision_mask_tensor
 
         return old_log_probabilities.squeeze(0).cpu().numpy().astype(np.float32, copy=False)
 
@@ -575,6 +638,21 @@ class MAPPO(ParallelLearner):
         active_mask = np.zeros((num_timesteps, num_roster_agents), dtype=np.float32)
         next_observations = np.zeros((num_timesteps, num_roster_agents, observation_dim), dtype=np.float32)
         next_active_mask = np.zeros((num_timesteps, num_roster_agents), dtype=np.float32)
+        has_action_masks = all("action_masks" in step_data for step_data in steps)
+        has_decision_mask = all("decision_mask" in step_data for step_data in steps)
+        action_masks = (
+            np.ones(
+                (num_timesteps, num_roster_agents, self.action_space_size),
+                dtype=np.bool_,
+            )
+            if has_action_masks
+            else None
+        )
+        decision_mask = (
+            np.zeros((num_timesteps, num_roster_agents), dtype=np.float32)
+            if has_decision_mask
+            else None
+        )
         global_states = np.stack([step_data["state"] for step_data in steps], axis=0)
         next_global_states = np.stack([step_data["next_state"] for step_data in steps], axis=0)
         done_flags = np.asarray([step_data["done"] for step_data in steps], dtype=np.float32)
@@ -586,6 +664,10 @@ class MAPPO(ParallelLearner):
                 actions[timestep_index, roster_slot_index] = step_data["actions"][local_agent_index]
                 rewards[timestep_index, roster_slot_index] = step_data["rewards"][local_agent_index]
                 active_mask[timestep_index, roster_slot_index] = step_data["active_mask"][local_agent_index]
+                if action_masks is not None:
+                    action_masks[timestep_index, roster_slot_index] = step_data["action_masks"][local_agent_index]
+                if decision_mask is not None:
+                    decision_mask[timestep_index, roster_slot_index] = step_data["decision_mask"][local_agent_index]
 
             for local_next_agent_index, agent_id in enumerate(step_data["next_agent_ids"]):
                 roster_slot_index = roster_slot_by_agent_id[agent_id]
@@ -594,13 +676,19 @@ class MAPPO(ParallelLearner):
                     local_next_agent_index
                 ]
 
-        old_log_probabilities = self._compute_old_log_probs(observations, actions, active_mask)
+        old_log_probabilities = self._compute_old_log_probs(
+            observations,
+            actions,
+            active_mask,
+            action_masks=action_masks,
+            decision_mask=decision_mask,
+        )
         team_values = self._compute_values(observations, active_mask)
         next_team_values = self._compute_values(next_observations, next_active_mask)
         team_rewards = self._team_rewards(rewards, active_mask)
         team_advantages, team_returns = self._compute_gae(team_rewards, team_values, next_team_values, done_flags)
 
-        return {
+        episode = {
             "obs": observations,
             "actions": actions,
             "rewards": rewards,
@@ -618,6 +706,11 @@ class MAPPO(ParallelLearner):
             "T": int(observations.shape[0]),
             "N": int(observations.shape[1]),
         }
+        if action_masks is not None:
+            episode["action_masks"] = action_masks
+        if decision_mask is not None:
+            episode["decision_mask"] = decision_mask
+        return episode
 
     @staticmethod
     def _masked_mean(values: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -707,7 +800,44 @@ class MAPPO(ParallelLearner):
         time_mask = (torch.arange(max_num_timesteps, device=self.device).unsqueeze(0) < episode_lengths.unsqueeze(1)).to(
             dtype=torch.float32
         )
-        combined_mask = active_mask * time_mask.unsqueeze(-1)
+        if all("decision_mask" in episode for episode in batch):
+            decision_mask = torch.as_tensor(
+                np.stack(
+                    [
+                        self._pad_time_agents(
+                            episode["decision_mask"],
+                            max_num_timesteps,
+                            max_num_agents,
+                            pad_value=0.0,
+                        )
+                        for episode in batch
+                    ]
+                ),
+                device=self.device,
+                dtype=torch.float32,
+            )
+            combined_mask = decision_mask * time_mask.unsqueeze(-1)
+        else:
+            decision_mask = None
+            combined_mask = active_mask * time_mask.unsqueeze(-1)
+        if all("action_masks" in episode for episode in batch):
+            action_masks = torch.as_tensor(
+                np.stack(
+                    [
+                        self._pad_time_agents(
+                            episode["action_masks"],
+                            max_num_timesteps,
+                            max_num_agents,
+                            pad_value=True,
+                        )
+                        for episode in batch
+                    ]
+                ),
+                device=self.device,
+                dtype=torch.bool,
+            )
+        else:
+            action_masks = None
         valid_time = time_mask * (active_mask.sum(dim=2) > 0.0).to(dtype=torch.float32)
 
         return {
@@ -720,6 +850,7 @@ class MAPPO(ParallelLearner):
             "time_mask": time_mask,
             "combined_mask": combined_mask,
             "valid_time": valid_time,
+            "action_masks": action_masks,
         }
 
     def _normalize_advantages(self, advantages: torch.Tensor, valid_time: torch.Tensor) -> torch.Tensor:
@@ -742,9 +873,12 @@ class MAPPO(ParallelLearner):
         old_log_probs: torch.Tensor,
         advantages: torch.Tensor,
         combined_mask: torch.Tensor,
+        action_masks: Optional[torch.Tensor] = None,
     ) -> dict[str, torch.Tensor]:
         """Compute clipped PPO policy objective and entropy bonus."""
         action_logits = self._actor_forward(obs)
+        if action_masks is not None:
+            action_logits = mask_unavailable_values(action_logits, action_masks)
         categorical_distribution = torch.distributions.Categorical(logits=action_logits)
         new_log_probabilities = categorical_distribution.log_prob(actions)
         action_entropy = categorical_distribution.entropy()
@@ -870,6 +1004,7 @@ class MAPPO(ParallelLearner):
                 old_log_probs=old_log_probabilities,
                 advantages=normalized_advantages,
                 combined_mask=combined_mask,
+                action_masks=minibatch_tensors["action_masks"],
             )
             value_terms = self._compute_value_terms(
                 obs=observations,
@@ -976,13 +1111,30 @@ class MAPPO(ParallelLearner):
             raise ValueError("MAPPO.act requires agent_index. Prefer act_parallel for parallel environments.")
         return self._act_single(state=state, actor_key=agent_index)
 
-    def act_parallel(self, obs_dict: dict[object, np.ndarray]) -> dict[object, int]:
-        return {
-            agent_id: self._act_single(state=obs_dict[agent_id], actor_key=agent_id)
-            for agent_id in _sorted_agent_ids(obs_dict.keys())
-        }
+    def act_parallel(self, obs_dict: dict[object, np.ndarray], action_mask_dict=None) -> dict[object, int]:
+        actions: dict[object, int] = {}
+        for agent_id in _sorted_agent_ids(obs_dict.keys()):
+            if action_mask_dict is None:
+                actions[agent_id] = self._act_single(
+                    state=obs_dict[agent_id],
+                    actor_key=agent_id,
+                )
+            else:
+                action_mask = coerce_action_mask(
+                    action_mask_dict[agent_id],
+                    self.action_space_size,
+                    label=f"action mask for {agent_id}",
+                )
+                actions[agent_id] = self._act_single(
+                    state=obs_dict[agent_id],
+                    actor_key=agent_id,
+                    action_mask=action_mask,
+                )
+        return actions
 
     def record_parallel_step(self, transition: ParallelTransition) -> None:
+        episode_finished = resolve_parallel_done(transition.done_dict)
+        bootstrap_terminal = episode_finished and not resolve_parallel_done(transition.truncated_dict)
         self.store_transition(
             observations=transition.obs_dict,
             actions=transition.action_dict,
@@ -992,7 +1144,10 @@ class MAPPO(ParallelLearner):
             next_observations=transition.next_obs_dict,
             next_active_mask=transition.next_active_agent_mask_dict,
             next_global_state=transition.next_global_state,
-            done=resolve_parallel_done(transition.done_dict),
+            done=bootstrap_terminal,
+            decision_mask=transition.decision_agent_mask_dict,
+            action_masks=transition.action_mask_dict,
+            episode_finished=episode_finished,
         )
 
     def _checkpoint_state(self) -> dict:

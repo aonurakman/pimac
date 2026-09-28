@@ -18,7 +18,10 @@ from algorithms.base import (
     ParallelLearner,
     ParallelTransition,
     UpdateReport,
+    coerce_action_mask,
+    mask_unavailable_values,
     normalize_config,
+    resolve_agent_done,
     resolve_parallel_done,
 )
 
@@ -99,6 +102,8 @@ class AgentRNN(nn.Module):
 
 class VDN(ParallelLearner):
     """Value Decomposition Networks with the shared benchmark API."""
+
+    supports_legal_action_masks = True
 
     # -------------------------------------------------------------------------
     # Config normalization
@@ -219,7 +224,9 @@ class VDN(ParallelLearner):
             self._agent_slot_map[agent_id] = slot
         return slot
 
-    def _boltzmann_action(self, q_values: torch.Tensor) -> int:
+    def _boltzmann_action(self, q_values: torch.Tensor, action_mask=None) -> int:
+        if action_mask is not None:
+            q_values = mask_unavailable_values(q_values, action_mask)
         if self._eval_mode:
             return int(torch.argmax(q_values).item())
         if self.temperature <= 0.0:
@@ -229,7 +236,7 @@ class VDN(ParallelLearner):
         distribution = torch.distributions.Categorical(logits=logits)
         return int(distribution.sample().item())
 
-    def _act_one(self, obs: np.ndarray, agent_key: object) -> int:
+    def _act_one(self, obs: np.ndarray, agent_key: object, action_mask=None) -> int:
         obs_tensor = torch.as_tensor(np.asarray(obs, dtype=np.float32), device=self.device).view(1, 1, -1)
         if self.share_parameters:
             hidden_dim = self.agent_net.rnn.hidden_size
@@ -241,20 +248,32 @@ class VDN(ParallelLearner):
         self._set_hidden_state(agent_key, hidden_state)
         q_values = q_seq.squeeze(0).squeeze(0)
 
-        return self._boltzmann_action(q_values)
+        if action_mask is None:
+            return self._boltzmann_action(q_values)
+        return self._boltzmann_action(q_values, action_mask)
 
     def act(self, state: np.ndarray, agent_index: Optional[object] = None) -> int:
         if agent_index is None:
             agent_index = 0
         return self._act_one(state, agent_index)
 
-    def act_parallel(self, obs_dict: dict[object, np.ndarray]) -> dict[object, int]:
+    def act_parallel(self, obs_dict: dict[object, np.ndarray], action_mask_dict=None) -> dict[object, int]:
         actions_by_agent_id: dict[object, int] = {}
         for agent_id in _sorted_agent_ids(obs_dict.keys()):
-            actions_by_agent_id[agent_id] = self._act_one(
-                obs_dict[agent_id],
-                self._actor_key(agent_id),
-            )
+            agent_key = self._actor_key(agent_id)
+            if action_mask_dict is None:
+                actions_by_agent_id[agent_id] = self._act_one(obs_dict[agent_id], agent_key)
+            else:
+                action_mask = coerce_action_mask(
+                    action_mask_dict[agent_id],
+                    self.action_space_size,
+                    label=f"action mask for {agent_id}",
+                )
+                actions_by_agent_id[agent_id] = self._act_one(
+                    obs_dict[agent_id],
+                    agent_key,
+                    action_mask,
+                )
         return actions_by_agent_id
 
     # -------------------------------------------------------------------------
@@ -275,6 +294,10 @@ class VDN(ParallelLearner):
         rewards_batch = np.zeros(self.max_agents, dtype=np.float32)
         active_mask = np.zeros(self.max_agents, dtype=np.float32)
         next_active_mask = np.zeros(self.max_agents, dtype=np.float32)
+        action_masks = np.zeros((self.max_agents, self.action_space_size), dtype=np.bool_)
+        next_action_masks = np.zeros((self.max_agents, self.action_space_size), dtype=np.bool_)
+        action_masks[:, 0] = True
+        next_action_masks[:, 0] = True
 
         for agent_index, agent_id in enumerate(agent_ids):
             if agent_index >= self.max_agents:
@@ -295,23 +318,45 @@ class VDN(ParallelLearner):
                 if transition.next_active_agent_mask_dict is not None
                 else (
                     1.0
-                    if agent_id in transition.next_obs_dict and not bool(transition.done_dict.get(agent_id, False))
+                    if agent_id in transition.next_obs_dict
+                    and not (
+                        resolve_agent_done(transition.done_dict, agent_id)
+                        and not resolve_agent_done(transition.truncated_dict, agent_id)
+                    )
                     else 0.0
                 )
             )
 
-        self._episode_steps.append(
-            {
+            if transition.action_mask_dict is not None:
+                action_masks[agent_index] = coerce_action_mask(
+                    transition.action_mask_dict[agent_id],
+                    self.action_space_size,
+                    label=f"action mask for {agent_id}",
+                )
+            if transition.next_action_mask_dict is not None:
+                next_action_masks[agent_index] = coerce_action_mask(
+                    transition.next_action_mask_dict[agent_id],
+                    self.action_space_size,
+                    label=f"next action mask for {agent_id}",
+                )
+
+        episode_finished = resolve_parallel_done(transition.done_dict)
+        bootstrap_terminal = episode_finished and not resolve_parallel_done(transition.truncated_dict)
+        step = {
                 "obs": obs_batch,
                 "actions": actions_batch,
                 "rewards": rewards_batch,
                 "active_mask": active_mask,
                 "next_obs": next_obs_batch,
                 "next_active_mask": next_active_mask,
-                "done": resolve_parallel_done(transition.done_dict),
+                "done": bootstrap_terminal,
             }
-        )
-        if self._episode_steps[-1]["done"]:
+        if transition.action_mask_dict is not None:
+            step["action_masks"] = action_masks
+        if transition.next_action_mask_dict is not None:
+            step["next_action_masks"] = next_action_masks
+        self._episode_steps.append(step)
+        if episode_finished:
             self.memory.append(self._finalize_episode(self._episode_steps))
             self._episode_steps = []
 
@@ -326,6 +371,10 @@ class VDN(ParallelLearner):
             "done": np.asarray([step["done"] for step in steps], dtype=np.float32),
             "T": int(len(steps)),
         }
+        if "action_masks" in steps[0]:
+            episode["action_masks"] = np.stack([step["action_masks"] for step in steps], axis=0)
+        if "next_action_masks" in steps[0]:
+            episode["next_action_masks"] = np.stack([step["next_action_masks"] for step in steps], axis=0)
         return episode
 
     # -------------------------------------------------------------------------
@@ -414,6 +463,15 @@ class VDN(ParallelLearner):
             ).to(dtype=torch.float32)
             total_samples_seen += int(time_mask.sum().item() * self.max_agents)
 
+            if all("next_action_masks" in ep for ep in batch):
+                next_action_masks = torch.as_tensor(
+                    np.stack([pad_time(ep["next_action_masks"], pad_value=True) for ep in batch]),
+                    device=self.device,
+                    dtype=torch.bool,
+                )
+            else:
+                next_action_masks = None
+
             if self.share_parameters:
                 q_all = self._agent_q_values(obs, self.agent_net, share=True)
                 next_q_online = self._agent_q_values(next_obs, self.agent_net, share=True)
@@ -436,6 +494,9 @@ class VDN(ParallelLearner):
             team_rewards = (rewards * active_mask).sum(dim=2) / active_counts
 
             with torch.no_grad():
+                if next_action_masks is not None:
+                    next_q_online = mask_unavailable_values(next_q_online, next_action_masks)
+                    next_q_target = mask_unavailable_values(next_q_target, next_action_masks)
                 if self.double_q:
                     next_actions = torch.argmax(next_q_online, dim=-1)
                 else:

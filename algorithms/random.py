@@ -23,6 +23,8 @@ RANDOM_DEFAULT_CONFIG = {
 class RandomPolicy(ParallelLearner):
     """A no-learning policy that samples uniformly from the action space."""
 
+    supports_legal_action_masks = True
+
     @staticmethod
     def normalize_config(config: dict) -> dict:
         return normalize_config(config, RANDOM_DEFAULT_CONFIG)
@@ -41,7 +43,19 @@ class RandomPolicy(ParallelLearner):
     def set_eval_mode(self) -> None:
         self._eval_mode = True
 
-    def act_parallel(self, obs_dict: dict[object, np.ndarray]) -> dict[object, int]:
+    def act_parallel(
+        self,
+        obs_dict: dict[object, np.ndarray],
+        action_mask_dict: Optional[dict[object, np.ndarray]] = None,
+    ) -> dict[object, int]:
+        if action_mask_dict is not None:
+            actions: dict[object, int] = {}
+            for agent_id in sorted(obs_dict.keys(), key=str):
+                legal_actions = np.flatnonzero(np.asarray(action_mask_dict[agent_id], dtype=np.int8))
+                if legal_actions.size == 0:
+                    raise ValueError(f"Agent {agent_id!r} has no legal actions.")
+                actions[agent_id] = int(self._rng.choice(legal_actions))
+            return actions
         return {
             agent_id: int(self._rng.integers(0, self.action_space_size))
             for agent_id in sorted(obs_dict.keys(), key=str)

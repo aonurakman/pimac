@@ -16,6 +16,8 @@ from algorithms.base import (
     ParallelLearner,
     ParallelTransition,
     UpdateReport,
+    coerce_action_mask,
+    mask_unavailable_values,
     normalize_config,
     resolve_agent_done,
     resolve_parallel_done,
@@ -95,6 +97,8 @@ class ActorCriticRNN(nn.Module):
 class IPPO(ParallelLearner):
     """Independent PPO with shared parameters and a parallel-only public API."""
 
+    supports_legal_action_masks = True
+
     # -------------------------------------------------------------------------
     # Config normalization
     # -------------------------------------------------------------------------
@@ -163,7 +167,7 @@ class IPPO(ParallelLearner):
     def _set_hidden_state(self, agent_id: object, hidden_state: torch.Tensor) -> None:
         self._inference_hidden[agent_id] = hidden_state.detach()
 
-    def _act_one(self, agent_id: object, obs: np.ndarray) -> int:
+    def _act_one(self, agent_id: object, obs: np.ndarray, action_mask=None) -> int:
         obs_array = np.asarray(obs, dtype=np.float32).reshape(-1)
         obs_tensor = torch.as_tensor(obs_array, dtype=torch.float32, device=self.device).view(1, 1, -1)
 
@@ -176,27 +180,44 @@ class IPPO(ParallelLearner):
         logits_t = logits.squeeze(0).squeeze(0)
         value_t = values.squeeze(0).squeeze(0)
 
+        legal_actions = None
+        if action_mask is not None:
+            legal_actions = coerce_action_mask(
+                action_mask,
+                self.action_space_size,
+                label=f"action mask for {agent_id}",
+            )
+            logits_t = mask_unavailable_values(logits_t, legal_actions)
+
         distribution = torch.distributions.Categorical(logits=logits_t)
         action = int(distribution.sample().item())
         log_prob = float(distribution.log_prob(torch.tensor(action, device=logits_t.device)).item())
 
-        self._agent_steps[agent_id].append(
-            {
-                "obs": obs_array,
-                "action": action,
-                "log_prob": log_prob,
-                "value": float(value_t.item()),
-            }
-        )
+        step = {
+            "obs": obs_array,
+            "action": action,
+            "log_prob": log_prob,
+            "value": float(value_t.item()),
+        }
+        if legal_actions is not None:
+            step["action_mask"] = legal_actions
+        self._agent_steps[agent_id].append(step)
         return action
 
     def act(self, state: np.ndarray, agent_index: object = 0) -> int:
         return self._act_one(agent_index, state)
 
-    def act_parallel(self, obs_dict: dict[object, np.ndarray]) -> dict[object, int]:
+    def act_parallel(self, obs_dict: dict[object, np.ndarray], action_mask_dict=None) -> dict[object, int]:
         actions: dict[object, int] = {}
         for agent_id in _sorted_agent_ids(obs_dict.keys()):
-            actions[agent_id] = self._act_one(agent_id, obs_dict[agent_id])
+            if action_mask_dict is None:
+                actions[agent_id] = self._act_one(agent_id, obs_dict[agent_id])
+            else:
+                actions[agent_id] = self._act_one(
+                    agent_id,
+                    obs_dict[agent_id],
+                    action_mask_dict[agent_id],
+                )
         return actions
 
     # -------------------------------------------------------------------------
@@ -212,8 +233,21 @@ class IPPO(ParallelLearner):
                 continue
             step = steps[-1]
             step["reward"] = float(reward_dict.get(agent_id, 0.0))
-            step["done"] = resolve_agent_done(done_dict, agent_id)
-            if step["done"]:
+            episode_boundary = resolve_agent_done(done_dict, agent_id)
+            truncated = resolve_agent_done(transition.truncated_dict, agent_id)
+            step["done"] = episode_boundary and not truncated
+            if transition.decision_agent_mask_dict is not None:
+                step["decision_mask"] = float(transition.decision_agent_mask_dict.get(agent_id, 0.0))
+            if episode_boundary and truncated and agent_id in transition.next_obs_dict:
+                next_obs = np.asarray(transition.next_obs_dict[agent_id], dtype=np.float32).reshape(-1)
+                next_obs_tensor = torch.as_tensor(next_obs, dtype=torch.float32, device=self.device).view(1, 1, -1)
+                with torch.no_grad():
+                    _, next_values, _ = self.actor_critic_net(
+                        next_obs_tensor,
+                        self._get_hidden_state(agent_id),
+                    )
+                step["bootstrap_value"] = float(next_values.squeeze().item())
+            if episode_boundary:
                 self.memory.append(self._finalize_episode(steps))
                 self._agent_steps[agent_id] = []
 
@@ -227,7 +261,7 @@ class IPPO(ParallelLearner):
 
         advantages = np.zeros_like(rewards, dtype=np.float32)
         last_advantage = 0.0
-        next_value = 0.0
+        next_value = float(steps[-1].get("bootstrap_value", 0.0))
         for timestep_index in range(rewards.shape[0] - 1, -1, -1):
             non_terminal = 1.0 - dones[timestep_index]
             delta = rewards[timestep_index] + self.gamma * non_terminal * next_value - values[timestep_index]
@@ -235,7 +269,7 @@ class IPPO(ParallelLearner):
             advantages[timestep_index] = last_advantage
             next_value = values[timestep_index]
         returns = advantages + values
-        return {
+        episode = {
             "obs": obs,
             "actions": actions,
             "old_log_probs": old_log_probs,
@@ -243,6 +277,14 @@ class IPPO(ParallelLearner):
             "returns": returns,
             "T": int(obs.shape[0]),
         }
+        if "action_mask" in steps[0]:
+            episode["action_masks"] = np.stack([step["action_mask"] for step in steps], axis=0)
+        if "decision_mask" in steps[0]:
+            episode["decision_masks"] = np.asarray(
+                [step["decision_mask"] for step in steps],
+                dtype=np.float32,
+            )
+        return episode
 
     # -------------------------------------------------------------------------
     # Update scheduling and learning
@@ -302,11 +344,32 @@ class IPPO(ParallelLearner):
             ).to(dtype=torch.float32)
             total_samples_seen += int(lengths.sum().item())
 
+            use_action_masks = all("action_masks" in episode for episode in batch)
+            if use_action_masks:
+                action_masks = torch.as_tensor(
+                    np.stack([pad_time(episode["action_masks"], pad_value=1.0) for episode in batch]),
+                    device=self.device,
+                    dtype=torch.bool,
+                )
+            else:
+                action_masks = None
+            if all("decision_masks" in episode for episode in batch):
+                decision_masks = torch.as_tensor(
+                    np.stack([pad_time(episode["decision_masks"]) for episode in batch]),
+                    device=self.device,
+                    dtype=torch.float32,
+                )
+                policy_mask = decision_masks * time_mask
+            else:
+                policy_mask = time_mask
+
             if self.normalize_advantage:
-                valid_advantages = advantages[time_mask.bool()]
+                valid_advantages = advantages[policy_mask.bool()]
                 advantages = (advantages - valid_advantages.mean()) / (valid_advantages.std() + 1e-8)
 
             logits, values, _ = self.actor_critic_net(obs, None)
+            if action_masks is not None:
+                logits = mask_unavailable_values(logits, action_masks)
             distribution = torch.distributions.Categorical(logits=logits)
             new_log_probs = distribution.log_prob(actions.long())
             entropy = distribution.entropy()
@@ -314,16 +377,17 @@ class IPPO(ParallelLearner):
             ratio = torch.exp(new_log_probs - old_log_probs)
             unclipped = ratio * advantages
             clipped = torch.clamp(ratio, 1.0 - self.clip_eps, 1.0 + self.clip_eps) * advantages
-            decision_denom = time_mask.sum().clamp(min=1.0)
+            decision_denom = policy_mask.sum().clamp(min=1.0)
 
-            policy_loss = -(torch.min(unclipped, clipped) * time_mask).sum() / decision_denom
-            value_loss = (((returns - values) ** 2) * time_mask).sum() / decision_denom
-            entropy_bonus = (entropy * time_mask).sum() / decision_denom
+            policy_loss = -(torch.min(unclipped, clipped) * policy_mask).sum() / decision_denom
+            value_denom = time_mask.sum().clamp(min=1.0)
+            value_loss = (((returns - values) ** 2) * time_mask).sum() / value_denom
+            entropy_bonus = (entropy * policy_mask).sum() / decision_denom
             total_loss = policy_loss + self.value_coef * value_loss - self.entropy_coef * entropy_bonus
 
             with torch.no_grad():
-                approx_kl = (((old_log_probs - new_log_probs) * time_mask).sum() / decision_denom).item()
-                clip_frac = ((((ratio - 1.0).abs() > self.clip_eps).to(dtype=torch.float32) * time_mask).sum() / decision_denom).item()
+                approx_kl = (((old_log_probs - new_log_probs) * policy_mask).sum() / decision_denom).item()
+                clip_frac = ((((ratio - 1.0).abs() > self.clip_eps).to(dtype=torch.float32) * policy_mask).sum() / decision_denom).item()
                 valid_returns = returns[time_mask.bool()]
                 valid_values = values.detach()[time_mask.bool()]
                 if valid_returns.numel() > 1:

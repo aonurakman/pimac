@@ -16,6 +16,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+import numpy as np
 import torch
 
 
@@ -33,9 +34,12 @@ class ParallelEnvSpec:
     obs_size: int
     action_space_size: int
     max_agents: int
+    global_state_size: Optional[int] = None
 
     @property
     def centralized_state_size(self) -> int:
+        if self.global_state_size is not None:
+            return int(self.global_state_size)
         return int(self.obs_size) * int(self.max_agents)
 
 
@@ -50,6 +54,11 @@ class ParallelTransition:
     `active_agent_mask_dict` marks which known agents are present in the current step.
     `next_active_agent_mask_dict` does the same for the next-step roster.
     These are team-membership masks for padded joint tensors, not legal-action masks.
+
+    `decision_agent_mask_dict` marks present agents that make a meaningful decision. This differs
+    from roster presence in environments such as SMACv2, where a dead unit remains a roster member
+    but is forced to take no-op. `action_mask_dict` and `next_action_mask_dict` contain the legal
+    discrete-action support. Existing task runners leave all four optional fields unset.
     """
 
     obs_dict: dict[object, Any]
@@ -62,6 +71,10 @@ class ParallelTransition:
     global_state: Optional[Any] = None
     next_global_state: Optional[Any] = None
     truncated_dict: Optional[dict[object, bool]] = None
+    decision_agent_mask_dict: Optional[dict[object, Any]] = None
+    next_decision_agent_mask_dict: Optional[dict[object, Any]] = None
+    action_mask_dict: Optional[dict[object, Any]] = None
+    next_action_mask_dict: Optional[dict[object, Any]] = None
 
 
 @dataclass(frozen=True)
@@ -118,8 +131,32 @@ def resolve_agent_done(done_dict: dict[object, Any] | None, agent_id: object) ->
     return bool(done_dict.get(agent_id, False))
 
 
+def coerce_action_mask(action_mask: Any, action_space_size: int, *, label: str = "action mask") -> np.ndarray:
+    """Return one validated boolean legal-action mask."""
+
+    mask = np.asarray(action_mask, dtype=np.bool_).reshape(-1)
+    if mask.shape != (int(action_space_size),):
+        raise ValueError(f"{label} has shape {mask.shape}; expected ({int(action_space_size)},).")
+    if not bool(mask.any()):
+        raise ValueError(f"{label} contains no legal action.")
+    return mask
+
+
+def mask_unavailable_values(values: torch.Tensor, action_mask: Any) -> torch.Tensor:
+    """Mask unavailable discrete actions while requiring at least one legal action per row."""
+
+    mask = torch.as_tensor(action_mask, dtype=torch.bool, device=values.device)
+    if mask.shape != values.shape:
+        raise ValueError(f"Action-mask shape {tuple(mask.shape)} does not match values {tuple(values.shape)}.")
+    if bool((~mask.any(dim=-1)).any().item()):
+        raise ValueError("Every action-mask row must contain at least one legal action.")
+    return values.masked_fill(~mask, torch.finfo(values.dtype).min)
+
+
 class ParallelLearner(ABC):
     """Small shared base for all benchmark algorithms."""
+
+    supports_legal_action_masks = False
 
     def __init__(self, env_spec: ParallelEnvSpec, config: dict[str, Any], device: str = "cpu"):
         self.env_spec = env_spec
@@ -144,7 +181,11 @@ class ParallelLearner(ABC):
         pass
 
     @abstractmethod
-    def act_parallel(self, obs_dict: dict[object, Any]) -> dict[object, int]:
+    def act_parallel(
+        self,
+        obs_dict: dict[object, Any],
+        action_mask_dict: Optional[dict[object, Any]] = None,
+    ) -> dict[object, int]:
         pass
 
     @abstractmethod

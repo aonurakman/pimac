@@ -18,6 +18,8 @@ from algorithms.base import (
     ParallelLearner,
     ParallelTransition,
     UpdateReport,
+    coerce_action_mask,
+    mask_unavailable_values,
     normalize_config,
     resolve_agent_done,
     resolve_parallel_done,
@@ -136,6 +138,8 @@ class MixingNetwork(nn.Module):
 class QMIX(ParallelLearner):
     """QMIX with the shared benchmark API."""
 
+    supports_legal_action_masks = True
+
     # -------------------------------------------------------------------------
     # Config normalization
     # -------------------------------------------------------------------------
@@ -230,10 +234,14 @@ class QMIX(ParallelLearner):
         progress = min(1.0, max(0.0, float(self._action_steps) / float(self.epsilon_anneal_steps)))
         return float(self.epsilon_start + progress * (self.epsilon_finish - self.epsilon_start))
 
-    def _epsilon_greedy_action(self, q_values: torch.Tensor) -> int:
+    def _epsilon_greedy_action(self, q_values: torch.Tensor, action_mask=None) -> int:
+        if action_mask is not None:
+            q_values = mask_unavailable_values(q_values, action_mask)
         if self._eval_mode:
             return int(torch.argmax(q_values).item())
         if random.random() < self._epsilon():
+            if action_mask is not None:
+                return int(random.choice(np.flatnonzero(action_mask).tolist()))
             return random.randrange(self.action_space_size)
         return int(torch.argmax(q_values).item())
 
@@ -243,14 +251,16 @@ class QMIX(ParallelLearner):
             previous_action[self._last_actions[agent_key]] = 1.0
         return np.concatenate((np.asarray(obs, dtype=np.float32), previous_action))
 
-    def _act_one(self, obs: np.ndarray, agent_key: object) -> int:
+    def _act_one(self, obs: np.ndarray, agent_key: object, action_mask=None) -> int:
         obs_tensor = torch.as_tensor(self._actor_input(obs, agent_key), device=self.device).view(1, 1, -1)
         hidden_dim = self.agent_net.rnn.hidden_size
         q_seq, hidden_state = self.agent_net(obs_tensor, self._get_hidden_state(agent_key, hidden_dim))
         self._set_hidden_state(agent_key, hidden_state)
         q_values = q_seq.squeeze(0).squeeze(0)
 
-        return self._epsilon_greedy_action(q_values)
+        if action_mask is None:
+            return self._epsilon_greedy_action(q_values)
+        return self._epsilon_greedy_action(q_values, action_mask)
 
     def act(self, state: np.ndarray, agent_index: Optional[object] = None) -> int:
         if agent_index is None:
@@ -259,10 +269,18 @@ class QMIX(ParallelLearner):
         self._last_actions[agent_index] = action
         return action
 
-    def act_parallel(self, obs_dict: dict[object, np.ndarray]) -> dict[object, int]:
+    def act_parallel(self, obs_dict: dict[object, np.ndarray], action_mask_dict=None) -> dict[object, int]:
         actions_by_agent_id: dict[object, int] = {}
         for agent_id in _sorted_agent_ids(obs_dict.keys()):
-            action = self._act_one(obs_dict[agent_id], agent_id)
+            if action_mask_dict is None:
+                action = self._act_one(obs_dict[agent_id], agent_id)
+            else:
+                action_mask = coerce_action_mask(
+                    action_mask_dict[agent_id],
+                    self.action_space_size,
+                    label=f"action mask for {agent_id}",
+                )
+                action = self._act_one(obs_dict[agent_id], agent_id, action_mask)
             actions_by_agent_id[agent_id] = action
             self._last_actions[agent_id] = action
         if not self._eval_mode:
@@ -296,6 +314,10 @@ class QMIX(ParallelLearner):
         rewards_batch = np.zeros(self.max_agents, dtype=np.float32)
         active_mask = np.zeros(self.max_agents, dtype=np.float32)
         next_active_mask = np.zeros(self.max_agents, dtype=np.float32)
+        action_masks = np.zeros((self.max_agents, self.action_space_size), dtype=np.bool_)
+        next_action_masks = np.zeros((self.max_agents, self.action_space_size), dtype=np.bool_)
+        action_masks[:, 0] = True
+        next_action_masks[:, 0] = True
 
         for agent_index, agent_id in enumerate(agent_ids):
             if agent_index >= self.max_agents:
@@ -325,13 +347,25 @@ class QMIX(ParallelLearner):
                 )
             )
 
+            if transition.action_mask_dict is not None:
+                action_masks[agent_index] = coerce_action_mask(
+                    transition.action_mask_dict[agent_id],
+                    self.action_space_size,
+                    label=f"action mask for {agent_id}",
+                )
+            if transition.next_action_mask_dict is not None:
+                next_action_masks[agent_index] = coerce_action_mask(
+                    transition.next_action_mask_dict[agent_id],
+                    self.action_space_size,
+                    label=f"next action mask for {agent_id}",
+                )
+
         state = self._derive_state(obs_batch) if transition.global_state is None else np.asarray(transition.global_state, dtype=np.float32)
         next_state = self._derive_state(next_obs_batch) if transition.next_global_state is None else np.asarray(transition.next_global_state, dtype=np.float32)
         episode_finished = resolve_parallel_done(transition.done_dict)
         bootstrap_terminal = episode_finished and not resolve_parallel_done(transition.truncated_dict)
 
-        self._episode_steps.append(
-            {
+        step = {
                 "obs": obs_batch,
                 "actions": actions_batch,
                 "rewards": rewards_batch,
@@ -342,7 +376,11 @@ class QMIX(ParallelLearner):
                 "next_state": next_state,
                 "done": bootstrap_terminal,
             }
-        )
+        if transition.action_mask_dict is not None:
+            step["action_masks"] = action_masks
+        if transition.next_action_mask_dict is not None:
+            step["next_action_masks"] = next_action_masks
+        self._episode_steps.append(step)
         if episode_finished:
             self.memory.append(self._finalize_episode(self._episode_steps))
             self._episode_steps = []
@@ -361,6 +399,10 @@ class QMIX(ParallelLearner):
             "done": np.asarray([step["done"] for step in steps], dtype=np.float32),
             "T": int(len(steps)),
         }
+        if "action_masks" in steps[0]:
+            episode["action_masks"] = np.stack([step["action_masks"] for step in steps], axis=0)
+        if "next_action_masks" in steps[0]:
+            episode["next_action_masks"] = np.stack([step["next_action_masks"] for step in steps], axis=0)
         return episode
 
     # -------------------------------------------------------------------------
@@ -459,6 +501,15 @@ class QMIX(ParallelLearner):
         ).to(dtype=torch.float32)
         mask_count = time_mask.sum().clamp(min=1.0)
 
+        if all("next_action_masks" in ep for ep in batch):
+            next_action_masks = torch.as_tensor(
+                np.stack([pad_time(ep["next_action_masks"], pad_value=True) for ep in batch]),
+                device=self.device,
+                dtype=torch.bool,
+            )
+        else:
+            next_action_masks = None
+
         safe_actions = actions.clone()
         safe_actions[active_mask == 0] = 0
         agent_inputs, next_agent_inputs = self._training_agent_inputs(
@@ -488,6 +539,9 @@ class QMIX(ParallelLearner):
         team_rewards = (rewards * active_mask).sum(dim=2) / active_counts
 
         with torch.no_grad():
+            if next_action_masks is not None:
+                next_q_online = mask_unavailable_values(next_q_online, next_action_masks)
+                next_q_target = mask_unavailable_values(next_q_target, next_action_masks)
             if self.double_q:
                 next_actions = torch.argmax(next_q_online, dim=-1)
             else:
