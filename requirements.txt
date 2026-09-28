@@ -9,3 +9,4 @@ rware==2.0.0
 lbforaging==2.0.0
 pytest>=8.0.0
 torch>=2.6.0
+SMACv2 @ git+https://github.com/oxwhirl/smacv2.git@577ab5a2cff2391f8df582da5731ea9cd6adf3c6

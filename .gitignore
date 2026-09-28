@@ -9,6 +9,7 @@ __pycache__/
 venv/
 .venv/
 env/
+.smacv2/
 
 # Build artifacts
 build/
@@ -42,6 +43,7 @@ plotting/single_curves/
 plotting/boxplots/
 plotting/stage_curves/
 plotting/coordination/
+plotting/student_context_projection/
 
 optuna/
 artwork/
