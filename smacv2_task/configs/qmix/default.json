@@ -1,0 +1,17 @@
+{
+  "batch_size": 32,
+  "buffer_size": 5000,
+  "double_q": true,
+  "epsilon_anneal_steps": 50000,
+  "epsilon_finish": 0.05,
+  "epsilon_start": 1.0,
+  "gamma": 0.99,
+  "hypernet_embed": 64,
+  "lr": 0.0005,
+  "max_grad_norm": 10.0,
+  "mixing_embed_dim": 32,
+  "rmsprop_alpha": 0.99,
+  "rmsprop_eps": 0.00001,
+  "rnn_hidden_dim": 64,
+  "target_update_every": 200
+}
