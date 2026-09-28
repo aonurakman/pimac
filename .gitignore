@@ -49,3 +49,9 @@ optuna/
 artwork/
 server_scripts/
 misc/
+
+smacv2_task/container
+.dockerignore
+smacv2_task/smoke.py
+smacv2_task/README.md
+
