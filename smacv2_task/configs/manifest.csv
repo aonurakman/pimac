@@ -1,0 +1,8 @@
+algorithm,config_file,source_suite,source_rank,objective_score,note
+ippo,ippo/best_01.json,smacv2_cal_01_ippo,1,0.12548341427302798,Protoss 5v5 validation winner; transfer unchanged to Terran and Zerg.
+mappo,mappo/best_01.json,smacv2_cal_01_policy,1,0.375581100931132,Protoss 5v5 validation winner; transfer unchanged to Terran and Zerg.
+pimac_v0,pimac_v0/best_01.json,smacv2_cal_01_policy,1,0.31308495797830194,Protoss 5v5 validation winner; transfer unchanged to Terran and Zerg.
+pimac_v6,pimac_v6/best_01.json,smacv2_cal_01_policy,1,0.4693583279875762,Protoss 5v5 validation winner; transfer unchanged to Terran and Zerg.
+qmix,qmix/best_01.json,smacv2_cal_01_qmix,1,0.3755964230669332,Protoss 5v5 validation winner; transfer unchanged to Terran and Zerg.
+mipi,mipi/best_01.json,smacv2_cal_01_mipi,1,0.21929535383642493,Protoss 5v5 validation winner; transfer unchanged to Terran and Zerg.
+mipi,mipi/best_01_native_state.json,smacv2_cal_01_mipi,1,,Matched native-state control; only the centralized information source changes and it was not separately calibrated.

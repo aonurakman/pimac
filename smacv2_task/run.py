@@ -113,6 +113,48 @@ def _episode_seed(base_seed: int, offset: int, episode_index: int) -> int:
     return int(base_seed) + int(offset) + int(episode_index)
 
 
+def _validate_evaluation_seed_pools(task_config: dict[str, Any]) -> None:
+    pools: dict[str, tuple[int, int]] = {}
+    final_evaluation_split = str(task_config.get("final_evaluation_split", "test"))
+    eval_every_steps = int(task_config.get("eval_every_steps", 0))
+    if eval_every_steps < 0:
+        raise ValueError("eval_every_steps must be non-negative.")
+    if final_evaluation_split == "validation" or eval_every_steps > 0:
+        pools["validation"] = (
+            int(task_config["validation_seed_offset"]),
+            int(task_config["validation_episodes"]),
+        )
+    if final_evaluation_split == "test" or eval_every_steps > 0:
+        pools["test"] = (
+            int(task_config["test_seed_offset"]),
+            int(task_config["test_episodes"]),
+        )
+    monitor_every_steps = int(task_config.get("monitor_every_steps", 0))
+    if monitor_every_steps < 0:
+        raise ValueError("monitor_every_steps must be non-negative.")
+    if monitor_every_steps > 0:
+        monitor_episodes = int(task_config.get("monitor_episodes", 0))
+        if monitor_episodes < 1:
+            raise ValueError("monitor_episodes must be positive when monitoring is enabled.")
+        pools["monitor"] = (int(task_config["monitor_seed_offset"]), monitor_episodes)
+
+    for label, (_, count) in pools.items():
+        if count < 1:
+            raise ValueError(f"{label}_episodes must be positive.")
+
+    labels = list(pools)
+    for index, left_label in enumerate(labels):
+        left_start, left_count = pools[left_label]
+        left_end = left_start + left_count
+        for right_label in labels[index + 1 :]:
+            right_start, right_count = pools[right_label]
+            right_end = right_start + right_count
+            if max(left_start, right_start) < min(left_end, right_end):
+                raise ValueError(
+                    f"{left_label} and {right_label} evaluation seed pools overlap."
+                )
+
+
 @contextmanager
 def _isolated_evaluation_rng():
     """Prevent stochastic validation actions from changing the training RNG streams."""
@@ -248,6 +290,7 @@ def _build_summary(
     seed: int,
     global_step: int,
     train_history: list[dict[str, Any]],
+    monitor_results: list[EvalResult],
     validation_results: list[EvalResult],
     final_evaluation: EvalResult,
     final_evaluation_split: str,
@@ -330,6 +373,13 @@ def _build_summary(
             if best_validation_index is not None
             else None,
         },
+        "monitoring": {
+            "enabled": int(task_config.get("monitor_every_steps", 0)) > 0,
+            "checkpoint_selection": False,
+            "evaluations": len(monitor_results),
+            "episodes_per_evaluation": int(task_config.get("monitor_episodes", 0)),
+            "latest": asdict(monitor_results[-1]) if monitor_results else None,
+        },
         "selection": selection,
         "test": selection if final_evaluation_split == "test" else {"status": "not_run"},
         "extra_metrics": dict(sorted(extra_metrics.items())),
@@ -360,6 +410,7 @@ def run_task(
     alg_path = resolve_json_path(alg_config_path, base_dir=TASK_DIR, project_root=PROJECT_ROOT)
     task_config = load_json(task_path)
     learner_config = load_json(alg_path)
+    _validate_evaluation_seed_pools(task_config)
     final_evaluation_split = str(task_config.get("final_evaluation_split", "test"))
     if final_evaluation_split not in {"validation", "test"}:
         raise ValueError("final_evaluation_split must be either 'validation' or 'test'.")
@@ -402,11 +453,14 @@ def run_task(
         best_ckpt_path = out_dir / "best_checkpoint.pt"
         final_ckpt_path = out_dir / "final_checkpoint.pt"
         validation_ckpt_path = out_dir / ".validation_checkpoint.pt"
+        monitor_ckpt_path = out_dir / ".monitor_checkpoint.pt"
 
         training_steps = int(task_config["training_steps"])
         eval_every_steps = int(task_config.get("eval_every_steps", 0))
+        monitor_every_steps = int(task_config.get("monitor_every_steps", 0))
         progress_every_steps = int(task_config.get("progress_every_steps", 50_000))
         next_eval_step = eval_every_steps
+        next_monitor_step = monitor_every_steps
         next_progress_step = progress_every_steps
         global_step = 0
         episode_index = 0
@@ -415,6 +469,7 @@ def run_task(
         best_checkpoint_step = 0
         train_history: list[dict[str, Any]] = []
         validation_results: list[EvalResult] = []
+        monitor_results: list[EvalResult] = []
         rollout_rows: list[dict[str, Any]] = []
         evaluation_seed = int(task_config["evaluation_seed"])
 
@@ -519,6 +574,27 @@ def run_task(
                 while next_eval_step <= global_step:
                     next_eval_step += eval_every_steps
 
+            if monitor_every_steps > 0 and global_step >= next_monitor_step:
+                learner.save_checkpoint(monitor_ckpt_path)
+                try:
+                    monitor_evaluator = _load_checkpoint_copy(learner, monitor_ckpt_path)
+                    monitor_result, monitor_rollouts = _evaluate(
+                        monitor_evaluator,
+                        task_config,
+                        evaluation_seed=evaluation_seed,
+                        seed_offset=int(task_config["monitor_seed_offset"]),
+                        rollout_count=int(task_config["monitor_episodes"]),
+                        phase="monitor",
+                        checkpoint_step=global_step,
+                    )
+                    monitor_results.append(monitor_result)
+                    rollout_rows.extend(monitor_rollouts)
+                    del monitor_evaluator
+                finally:
+                    monitor_ckpt_path.unlink(missing_ok=True)
+                while next_monitor_step <= global_step:
+                    next_monitor_step += monitor_every_steps
+
         learner.save_checkpoint(final_ckpt_path)
         final_evaluator = _load_checkpoint_copy(learner, final_ckpt_path)
         final_seed_offset = int(task_config[f"{final_evaluation_split}_seed_offset"])
@@ -563,6 +639,7 @@ def run_task(
             seed=seed,
             global_step=global_step,
             train_history=train_history,
+            monitor_results=monitor_results,
             validation_results=validation_results,
             final_evaluation=final_evaluation,
             final_evaluation_split=final_evaluation_split,
@@ -584,7 +661,9 @@ def run_task(
         )
         write_json(out_dir / "summary.json", summary)
         write_csv(out_dir / "train_history.csv", train_history)
-        all_eval_results = [*validation_results, final_evaluation] + ([best_test] if best_test else [])
+        all_eval_results = [*monitor_results, *validation_results, final_evaluation] + (
+            [best_test] if best_test else []
+        )
         write_csv(out_dir / "eval_summary.csv", [asdict(result) for result in all_eval_results])
         write_csv(out_dir / "eval_rollout_returns.csv", rollout_rows)
         save_update_history_json(out_dir / "update_history.json", learner.get_update_history())
